@@ -1,0 +1,8 @@
+[workspace]
+
+members = [ "manager",
+	"narabe",
+	"protocol", "tools",
+]
+
+resolver = "2"
