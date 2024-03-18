@@ -1,24 +1,110 @@
 use clap::Parser;
 use macroquad::prelude::*;
 
-mod board;
-mod protocol;
-
-use narabe::{Board, Side, Square};
+use narabe::board::{Board, Side, Square};
+use protocol::{BrainCommand, BrainCommandReader, Field, ManagerCommand};
+use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
+use tools::Pos;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
     #[arg(short, long, default_value = "")]
     board: String,
+
+    bot: PathBuf,
 }
 
 const LINE_WIDTH: f32 = 1.;
+
+pub struct ManagerClient<'a, R, W>
+where
+    R: Iterator,
+    R::Item: AsRef<str>,
+    W: Write,
+{
+    ostream: W,
+    istream: BrainCommandReader<'a, R>,
+}
+
+impl<'a, R, W> ManagerClient<'a, R, W>
+where
+    R: Iterator,
+    R::Item: AsRef<str>,
+    W: Write,
+{
+    pub fn new(istream: R, ostream: W) -> Self {
+        Self {
+            istream: BrainCommandReader::new(istream),
+            ostream,
+        }
+    }
+
+    pub fn send(&mut self, cmd: &ManagerCommand) {
+        write!(self.ostream, "{}", cmd).unwrap();
+    }
+}
+
+impl<'a, R, W> Iterator for ManagerClient<'a, R, W>
+where
+    R: Iterator,
+    R::Item: AsRef<str>,
+    W: Write,
+{
+    type Item = BrainCommand<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while let Some(cmd) = self.istream.next() {
+            match cmd {
+                Ok(BrainCommand::Ack) => (),
+                Ok(cmd) => return Some(cmd),
+                Err(_) => todo!(),
+            }
+        }
+        None
+    }
+}
+
+fn read_positions(board: &Board, side: Side) -> Vec<(Pos, Field)> {
+    let mut vec = Vec::new();
+
+    for row in 0..15 {
+        for col in 0..15 {
+            let pos = Pos::new(row, col);
+            if let Square::Piece(s) = board.at(pos) {
+                let field = if s == side {
+                    Field::Mine
+                } else {
+                    Field::Theirs
+                };
+                vec.push((pos, field));
+            }
+        }
+    }
+    vec
+}
 
 #[macroquad::main("gomoku")]
 async fn main() {
     let args = Args::parse();
     let mut board: Board = args.board.parse().unwrap();
+
+    let bot = Command::new(args.bot)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let mut client = ManagerClient::new(
+        BufReader::new(bot.stdout.unwrap())
+            .lines()
+            .map(|line| line.unwrap()),
+        bot.stdin.unwrap(),
+    );
+
+    client.send(&ManagerCommand::Start(15));
 
     let dots: &[Pos] = &[
         "h8".parse().unwrap(),
@@ -27,6 +113,8 @@ async fn main() {
         "l12".parse().unwrap(),
         "l4".parse().unwrap(),
     ];
+
+    let mut forbidden: Vec<Pos> = Vec::new();
 
     loop {
         clear_background(YELLOW);
@@ -115,6 +203,11 @@ async fn main() {
             }
         }
 
+        for pos in forbidden.iter() {
+            let (x, y) = to_screen_coords(*pos);
+            draw_circle(x, y, 7., RED);
+        }
+
         for dot in dots {
             let (x, y) = to_screen_coords(*dot);
             draw_circle(x, y, 3., BLACK);
@@ -133,9 +226,18 @@ async fn main() {
                 Side::Black
             };
             board.set(square, Square::Piece(side));
+
+            client.send(&ManagerCommand::YXBoard(read_positions(
+                &board,
+                Side::Black,
+            )));
         }
         if is_mouse_button_down(MouseButton::Middle) {
             board.set(square, Square::Empty);
+            client.send(&ManagerCommand::YXBoard(read_positions(
+                &board,
+                Side::Black,
+            )));
         }
 
         if is_key_down(KeyCode::C) {
@@ -144,6 +246,16 @@ async fn main() {
 
         if is_key_down(KeyCode::R) {
             board = Board::new();
+        }
+
+        if is_key_down(KeyCode::F) {
+            client.send(&ManagerCommand::YXShowForbid);
+
+            if let Some(BrainCommand::Forbid(positions)) = client.next()  {
+                forbidden = positions.into_owned();
+            } else {
+                panic!("expected forbidden positions");
+            }
         }
 
         next_frame().await
