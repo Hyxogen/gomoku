@@ -29,15 +29,15 @@ where
     }
 
     pub fn error(&mut self, s: &str) {
-        writeln!(self.ostream, "ERROR: {}", s).unwrap();
+        write!(self.ostream, "ERROR: {}", s).unwrap();
     }
 
     pub fn ack(&mut self) {
-        writeln!(self.ostream, "OK").unwrap();
+        write!(self.ostream, "OK").unwrap();
     }
 
     pub fn send(&mut self, cmd: BrainCommand) {
-        writeln!(self.ostream, "{}", cmd).unwrap();
+        write!(self.ostream, "{}", cmd).unwrap();
     }
 }
 
