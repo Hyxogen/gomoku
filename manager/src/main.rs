@@ -7,6 +7,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use tools::Pos;
+use std::borrow::Cow;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -43,7 +44,8 @@ where
     }
 
     pub fn send(&mut self, cmd: &ManagerCommand) {
-        write!(self.ostream, "{}", cmd).unwrap();
+        println!("{}", cmd);
+        writeln!(self.ostream, "{}", cmd).unwrap();
     }
 }
 
@@ -59,8 +61,9 @@ where
         while let Some(cmd) = self.istream.next() {
             match cmd {
                 Ok(BrainCommand::Ack) => (),
+                Ok(BrainCommand::Debug(msg)) => eprintln!("DEBUG: {}", msg.as_ref()),
                 Ok(cmd) => return Some(cmd),
-                Err(_) => todo!(),
+                Err(err) => eprintln!("parse error: {}", err),
             }
         }
         None
@@ -227,17 +230,17 @@ async fn main() {
             };
             board.set(square, Square::Piece(side));
 
-            client.send(&ManagerCommand::YXBoard(read_positions(
+            client.send(&ManagerCommand::YXBoard(Cow::Owned(read_positions(
                 &board,
                 Side::Black,
-            )));
+            ))));
         }
         if is_mouse_button_down(MouseButton::Middle) {
             board.set(square, Square::Empty);
-            client.send(&ManagerCommand::YXBoard(read_positions(
+            client.send(&ManagerCommand::YXBoard(Cow::Owned(read_positions(
                 &board,
                 Side::Black,
-            )));
+            ))));
         }
 
         if is_key_down(KeyCode::C) {

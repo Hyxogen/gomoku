@@ -2,7 +2,7 @@
 
 members = [ "manager",
 	"narabe",
-	"protocol", "tools",
+	"protocol", "tester", "tools",
 ]
 
 resolver = "2"

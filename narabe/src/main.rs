@@ -1,21 +1,22 @@
 mod board;
 use board::{Board, Side, Square};
 use protocol::{BrainCommand, Field, ManagerCommand, ManagerCommandReader};
+use std::borrow::Cow;
 use std::io;
 use std::io::Write;
 use tools::Pos;
 
-pub struct BrainClient<R, W>
+pub struct BrainClient<'a, R, W>
 where
     R: Iterator,
     R::Item: AsRef<str>,
     W: Write,
 {
     ostream: W,
-    istream: ManagerCommandReader<R>,
+    istream: ManagerCommandReader<'a, R>,
 }
 
-impl<R, W> BrainClient<R, W>
+impl<'a, R, W> BrainClient<'a, R, W>
 where
     R: Iterator,
     R::Item: AsRef<str>,
@@ -29,25 +30,25 @@ where
     }
 
     pub fn error(&mut self, s: &str) {
-        write!(self.ostream, "ERROR: {}", s).unwrap();
+        writeln!(self.ostream, "ERROR: {}", s).unwrap();
     }
 
     pub fn ack(&mut self) {
-        write!(self.ostream, "OK").unwrap();
+        writeln!(self.ostream, "OK").unwrap();
     }
 
     pub fn send(&mut self, cmd: BrainCommand) {
-        write!(self.ostream, "{}", cmd).unwrap();
+        writeln!(self.ostream, "{}", cmd).unwrap();
     }
 }
 
-impl<R, W> Iterator for BrainClient<R, W>
+impl<'a, R, W> Iterator for BrainClient<'a, R, W>
 where
     R: Iterator,
     R::Item: AsRef<str>,
     W: Write,
 {
-    type Item = ManagerCommand;
+    type Item = ManagerCommand<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(cmd) = self.istream.next() {
@@ -61,7 +62,7 @@ where
 }
 
 fn is_forbidden(pos: Pos, board: &mut Board) -> bool {
-    if board.at(pos) == Square::Empty {
+    if board.at(pos) != Square::Empty {
         return false;
     }
 
@@ -93,13 +94,13 @@ pub fn main() {
             }
             ManagerCommand::YXBoard(pieces) if initialized => {
                 board = Board::new();
-                for (pos, field) in pieces {
+                for (pos, field) in pieces.as_ref() {
                     let side = match field {
                         Field::Mine => Side::Black,
                         Field::Theirs => Side::White,
                     };
 
-                    board.set(pos, Square::Piece(side));
+                    board.set(*pos, Square::Piece(side));
                 }
             }
             ManagerCommand::YXShowForbid if initialized => {
@@ -113,7 +114,7 @@ pub fn main() {
                     }
                 }
 
-                client.send(BrainCommand::Forbid(std::borrow::Cow::Owned(forbidden)));
+                client.send(BrainCommand::Forbid(Cow::Owned(forbidden)));
             }
             ManagerCommand::Info(_, _) if initialized => {}
             _ if !initialized => {

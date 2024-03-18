@@ -12,24 +12,24 @@ pub enum Field {
 }
 
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
-pub enum ManagerCommand {
+pub enum ManagerCommand<'a> {
     Start(usize),
     Turn(Pos),
     Begin,
-    Board(Vec<(Pos, Field)>),
-    YXBoard(Vec<(Pos, Field)>),
+    Board(Cow<'a, Vec<(Pos, Field)>>),
+    YXBoard(Cow<'a, Vec<(Pos, Field)>>),
     YXShowForbid,
     Info(String, String),
     End,
     About,
 }
 
-impl std::fmt::Display for ManagerCommand {
+impl<'a> std::fmt::Display for ManagerCommand<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Start(size) => writeln!(f, "START {}", size),
-            Self::Turn(pos) => writeln!(f, "TURN {},{}", pos.col(), pos.row()),
-            Self::Begin => writeln!(f, "BEGIN"),
+            Self::Start(size) => write!(f, "START {}", size),
+            Self::Turn(pos) => write!(f, "TURN {},{}", pos.col(), pos.row()),
+            Self::Begin => write!(f, "BEGIN"),
             Self::Board(pieces) | Self::YXBoard(pieces) => {
                 if let Self::Board(_) = self {
                     writeln!(f, "BOARD")?;
@@ -37,7 +37,7 @@ impl std::fmt::Display for ManagerCommand {
                     writeln!(f, "yxboard")?;
                 }
 
-                for (pos, field) in pieces {
+                for (pos, field) in pieces.as_ref() {
                     writeln!(
                         f,
                         "{},{},{}",
@@ -46,12 +46,12 @@ impl std::fmt::Display for ManagerCommand {
                         if *field == Field::Mine { 1 } else { 2 }
                     )?;
                 }
-                writeln!(f, "DONE")
+                write!(f, "DONE")
             }
-            Self::YXShowForbid => writeln!(f, "yxshowforbid"),
-            Self::Info(key, val) => writeln!(f, "INFO {} {}", key, val),
-            Self::End => writeln!(f, "END"),
-            Self::About => writeln!(f, "ABOUT"),
+            Self::YXShowForbid => write!(f, "yxshowforbid"),
+            Self::Info(key, val) => write!(f, "INFO {} {}", key, val),
+            Self::End => write!(f, "END"),
+            Self::About => write!(f, "ABOUT"),
         }
     }
 }
@@ -61,7 +61,7 @@ fn space0_line_ending(s: &str) -> IResult<&str, ()> {
     Ok((rem, ()))
 }
 
-impl ManagerCommand {
+impl<'a> ManagerCommand<'a> {
     fn comma(s: &str) -> IResult<&str, char> {
         delimited(streaming::space0, streaming::one_of(","), streaming::space0)(s)
     }
@@ -71,18 +71,18 @@ impl ManagerCommand {
         Ok((rem, (col, row).into()))
     }
 
-    fn start(s: &str) -> IResult<&str, ManagerCommand> {
+    fn start<'b, 'c>(s: &'b str) -> IResult<&'b str, ManagerCommand<'c>> {
         let (rem, (_, _, size)) =
             (tag_no_case("start"), streaming::space1, streaming::u8).parse(s)?;
         Ok((rem, ManagerCommand::Start(size.into())))
     }
 
-    fn turn(s: &str) -> IResult<&str, ManagerCommand> {
+    fn turn<'b, 'c>(s: &'b str) -> IResult<&'b str, ManagerCommand<'c>> {
         let (rem, (_, _, pos)) = (tag_no_case("turn"), streaming::space1, Self::pos).parse(s)?;
         Ok((rem, ManagerCommand::Turn(pos)))
     }
 
-    fn begin(s: &str) -> IResult<&str, ManagerCommand> {
+    fn begin<'b, 'c>(s: &'b str) -> IResult<&'b str, ManagerCommand<'c>> {
         let (rem, _) = tag_no_case("begin")(s)?;
         Ok((rem, ManagerCommand::Begin))
     }
@@ -115,28 +115,28 @@ impl ManagerCommand {
         Ok((rem, pieces))
     }
 
-    fn board(s: &str) -> IResult<&str, ManagerCommand> {
+    fn board<'b, 'c>(s: &'b str) -> IResult<&'b str, ManagerCommand<'c>> {
         let (rem, (_, _, pieces)) =
             (tag_no_case("board"), space0_line_ending, Self::board_pieces).parse(s)?;
-        Ok((rem, ManagerCommand::Board(pieces)))
+        Ok((rem, ManagerCommand::Board(Cow::Owned(pieces))))
     }
 
-    fn yxboard(s: &str) -> IResult<&str, ManagerCommand> {
+    fn yxboard<'b, 'c>(s: &'b str) -> IResult<&'b str, ManagerCommand<'c>> {
         let (rem, (_, _, pieces)) = (
             tag_no_case("yxboard"),
             space0_line_ending,
             Self::board_pieces,
         )
             .parse(s)?;
-        Ok((rem, ManagerCommand::YXBoard(pieces)))
+        Ok((rem, ManagerCommand::YXBoard(Cow::Owned(pieces))))
     }
 
-    fn yxshowforbid(s: &str) -> IResult<&str, ManagerCommand> {
+    fn yxshowforbid<'b, 'c>(s: &'b str) -> IResult<&'b str, ManagerCommand<'c>> {
         let (rem, _) = tag_no_case("yxshowforbid")(s)?;
         Ok((rem, ManagerCommand::YXShowForbid))
     }
 
-    fn command(s: &str) -> IResult<&str, ManagerCommand> {
+    fn command<'b, 'c>(s: &'b str) -> IResult<&'b str, ManagerCommand<'c>> {
         nom::branch::alt((
             Self::start,
             Self::begin,
@@ -147,9 +147,9 @@ impl ManagerCommand {
         ))(s)
     }
 
-    fn parse(s: &str) -> IResult<&str, ManagerCommand> {
+    fn parse<'b, 'c>(s: &'b str) -> IResult<&'b str, ManagerCommand<'c>> {
         let (rem, (_, command, _)) =
-            (streaming::space0, Self::command, space0_line_ending).parse(s)?;
+            (streaming::multispace0, Self::command, space0_line_ending).parse(s)?;
         Ok((rem, command))
     }
 }
@@ -171,42 +171,45 @@ impl ParseError {
     }
 }
 
-pub struct ManagerCommandReader<I>
+pub struct ManagerCommandReader<'a, I>
 where
     I: Iterator,
     I::Item: AsRef<str>,
 {
     inner: I,
+    phantom: std::marker::PhantomData<&'a I>,
 }
 
-impl<I> ManagerCommandReader<I>
+impl<'a, I> ManagerCommandReader<'a, I>
 where
     I: Iterator,
     I::Item: AsRef<str>,
 {
     pub fn new(inner: I) -> Self {
-        Self { inner }
+        Self { inner, phantom: Default::default() }
     }
 }
 
-impl<I> Iterator for ManagerCommandReader<I>
+impl<'a, I> Iterator for ManagerCommandReader<'a, I>
 where
     I: Iterator,
     I::Item: AsRef<str>,
 {
-    type Item = Result<ManagerCommand, ParseError>;
+    type Item = Result<ManagerCommand<'a>, ParseError>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let mut cmd = String::new();
 
         loop {
             if let Some(line) = self.inner.next() {
-                let line = line.as_ref().trim();
-                cmd.push_str(line);
+                cmd.push_str(line.as_ref());
+                cmd.push('\r');
                 cmd.push('\n');
 
                 match ManagerCommand::parse(&cmd) {
-                    Ok((_, cmd)) => return Some(Ok(cmd)),
+                    Ok((_, cmd)) => {
+                        return Some(Ok(cmd))
+                    },
                     Err(nom::Err::Incomplete(_)) => continue,
                     Err(err) => match err.to_owned() {
                         nom::Err::Error(err) | nom::Err::Failure(err) => {
@@ -241,13 +244,13 @@ impl<'a> std::fmt::Display for BrainCommand<'a> {
                 for pos in positions.as_ref() {
                     write!(f, "{:0>2}{:0>2}", pos.col(), pos.row())?;
                 }
-                writeln!(f, ".")
+                write!(f, ".")
             }
-            Self::Unknown(msg) => writeln!(f, "UNKNOWN: {}", msg),
-            Self::Error(msg) => writeln!(f, "ERROR: {}", msg),
-            Self::Message(msg) => writeln!(f, "MESSAGE: {}", msg),
-            Self::Debug(msg) => writeln!(f, "DEBUG: {}", msg),
-            Self::Ack => writeln!(f, "OK"),
+            Self::Unknown(msg) => write!(f, "UNKNOWN: {}", msg),
+            Self::Error(msg) => write!(f, "ERROR: {}", msg),
+            Self::Message(msg) => write!(f, "MESSAGE: {}", msg),
+            Self::Debug(msg) => write!(f, "DEBUG: {}", msg),
+            Self::Ack => write!(f, "OK"),
         }
     }
 }
@@ -369,9 +372,10 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         if let Some(line) = self.inner.next() {
-            let line = line.as_ref().trim();
+            let mut line = line.as_ref().trim().to_string();
+            line.push('\n');
 
-            match BrainCommand::parse(line) {
+            match BrainCommand::parse(&line) {
                 Ok((_, cmd)) => Some(Ok(cmd)),
                 Err(nom::Err::Incomplete(_)) => todo!(),
                 Err(err) => match err.to_owned() {
