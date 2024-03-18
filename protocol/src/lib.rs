@@ -136,6 +136,18 @@ impl<'a> ManagerCommand<'a> {
         Ok((rem, ManagerCommand::YXShowForbid))
     }
 
+    fn info<'b, 'c>(s: &'b str) -> IResult<&'b str, ManagerCommand<'c>> {
+        let (rem, (_, _, key, _, val)) = (
+            tag_no_case("info"),
+            streaming::space1,
+            streaming::alphanumeric1,
+            streaming::space1,
+            streaming::alphanumeric1,
+        )
+            .parse(s)?;
+        Ok((rem, ManagerCommand::Info(key.to_string(), val.to_string())))
+    }
+
     fn command<'b, 'c>(s: &'b str) -> IResult<&'b str, ManagerCommand<'c>> {
         nom::branch::alt((
             Self::start,
@@ -144,6 +156,7 @@ impl<'a> ManagerCommand<'a> {
             Self::board,
             Self::yxboard,
             Self::yxshowforbid,
+            Self::info,
         ))(s)
     }
 
@@ -186,7 +199,10 @@ where
     I::Item: AsRef<str>,
 {
     pub fn new(inner: I) -> Self {
-        Self { inner, phantom: Default::default() }
+        Self {
+            inner,
+            phantom: Default::default(),
+        }
     }
 }
 
@@ -207,9 +223,7 @@ where
                 cmd.push('\n');
 
                 match ManagerCommand::parse(&cmd) {
-                    Ok((_, cmd)) => {
-                        return Some(Ok(cmd))
-                    },
+                    Ok((_, cmd)) => return Some(Ok(cmd)),
                     Err(nom::Err::Incomplete(_)) => continue,
                     Err(err) => match err.to_owned() {
                         nom::Err::Error(err) | nom::Err::Failure(err) => {

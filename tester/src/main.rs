@@ -143,6 +143,8 @@ fn main() {
 
     client1.send(&ManagerCommand::Start(15));
     client2.send(&ManagerCommand::Start(15));
+    client1.send(&ManagerCommand::Info("rule".to_string(), "4".to_string()));
+    client2.send(&ManagerCommand::Info("rule".to_string(), "4".to_string()));
 
     loop {
         let mut positions: Vec<(Pos, Field)> = Vec::new();
