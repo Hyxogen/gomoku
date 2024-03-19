@@ -54,15 +54,21 @@ impl<const SIZE: usize> fmt::Debug for BitBoard<SIZE> {
 
 // TODO check if passing row and col by u8 might be faster
 impl<const SIZE: usize> BitBoard<SIZE> {
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self { rows: [0; SIZE] }
     }
 
-    pub fn row(&self, row: usize) -> u32 {
+    pub const fn filled() -> Self {
+        Self {
+            rows: [u32::MAX; SIZE],
+        }
+    }
+
+    pub const fn row(&self, row: usize) -> u32 {
         self.rows[row]
     }
 
-    pub fn at(&self, pos: Pos) -> bool {
+    pub const fn at(&self, pos: Pos) -> bool {
         debug_assert!(pos.col() < SIZE);
         (self.rows[pos.row()] & (1 << pos.col())) != 0
     }
@@ -71,6 +77,14 @@ impl<const SIZE: usize> BitBoard<SIZE> {
         debug_assert!(pos.col() < SIZE);
         let mask = 1 << pos.col();
         self.rows[pos.row()] = (self.rows[pos.row()] & !mask) | val.then_some(mask).unwrap_or(0);
+    }
+
+    pub const fn set_move(mut self, pos: Pos, val: bool) -> Self {
+        let mask = 1 << pos.col();
+        let b = if val { mask } else { 0 };
+
+        self.rows[pos.row()] = (self.rows[pos.row()] & !mask) | b;
+        self
     }
 }
 
@@ -160,6 +174,11 @@ const DIAGONAL_WIN_PATTERNS: &'static [u32] = &[0b0101010101];
 const HORIZONTAL_OVERLINE_PATTERNS: &'static [u32] = &[0b111111];
 const DIAGONAL_OVERLINE_PATTERNS: &'static [u32] = &[0b010101010101];
 
+const EMPTY_NORMAL_BOARD: &'static BitBoard<BOARD_SIZE> = &BitBoard::new();
+const EMPTY_DIAGONAL_BOARD: &'static BitBoard<DIAG_SIZE> = &BitBoard::new();
+const NORMAL_BOUNDARY: &'static BitBoard<BOARD_SIZE> = &Board::normal_boundary_board();
+const DIAGONAL_BOUNDARY: &'static BitBoard<DIAG_SIZE> = &Board::diag_boundary_board();
+
 impl<const SIZE: usize> PieceBoard<SIZE> {
     pub fn new() -> Self {
         Self {
@@ -205,15 +224,8 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         pos: Pos,
         side: Side,
         patterns: &[u32],
+        boundary: &BitBoard<SIZE>,
     ) -> u8 {
-        // TODO try branchless variant with accumulator return
-        // i.e.:
-        // let mut res = false;
-        // ...
-        // if is_three && !opposing_piece_in_window {
-        //  res = true
-        //  continue
-        // }
         debug_assert!(LEN <= SIZE);
         debug_assert!(LEN > 0);
         let mut count = 0;
@@ -223,11 +235,15 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
 
         let our_row = self.get_row(pos.row(), side);
         let their_row = self.get_row(pos.row(), !side);
+        let boundary_mask = boundary.row(pos.row());
 
         for shift in min..=max {
             let mask = ((1 << LEN) - 1) << shift;
 
             if NO_OPPOSING && (their_row & mask) != 0 {
+                continue;
+            }
+            if (boundary_mask & mask) != 0 {
                 continue;
             }
 
@@ -245,8 +261,18 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         pos: Pos,
         side: Side,
         patterns: &[u32],
+        boundary: &BitBoard<SIZE>,
     ) -> bool {
-        self.count_pattern::<LEN, NO_OPPOSING>(pos, side, patterns) > 0
+        // TODO probably better if specialized
+        // TODO try branchless variant with accumulator return
+        // i.e.:
+        // let mut res = false;
+        // ...
+        // if is_three && !opposing_piece_in_window {
+        //  res = true
+        //  continue
+        // }
+        self.count_pattern::<LEN, NO_OPPOSING>(pos, side, patterns, boundary) > 0
     }
 }
 
@@ -288,16 +314,69 @@ impl Board {
         }
     }
 
+    pub const fn normal_boundary_board() -> BitBoard<BOARD_SIZE> {
+        let mut board: BitBoard<BOARD_SIZE> = BitBoard::filled();
+        let mut row = 0;
+
+        while row < BOARD_SIZE {
+            let mut col = 0;
+            while col < BOARD_SIZE {
+                board = board.set_move(Pos::new(row, col), false);
+                col += 1;
+            }
+            row += 1;
+        }
+        board
+    }
+
+    pub const fn diag_boundary_board() -> BitBoard<DIAG_SIZE> {
+        let mut board: BitBoard<DIAG_SIZE> = BitBoard::filled();
+
+        let mut n = 14;
+        let mut row = 0;
+
+        loop {
+            let mut i = n;
+
+            while i <= 14 {
+                board = board.set_move(Pos::new(row, i), false);
+                board = board.set_move(Pos::new(row, DIAG_SIZE - i - 1), false);
+
+                board = board.set_move(Pos::new(DIAG_SIZE - row - 1, i), false);
+                board = board.set_move(Pos::new(DIAG_SIZE - row - 1, DIAG_SIZE - i - 1), false);
+                i += 1;
+            }
+
+            if n == 0 {
+                break;
+            }
+
+
+            n -= 1;
+            row += 1;
+        }
+        board
+    }
+    /*
+     * Rust...
+     * pub const fn boundary_board<const SIZE: usize>() -> &'static BitBoard<SIZE> {
+        match SIZE {
+            15 => {
+                NORMAL_BOUNDARY
+            }
+        }
+    }*/
+
     pub fn at(&self, pos: Pos) -> Square {
         self.board0.at(pos)
     }
 
-    pub fn rot_right(pos: Pos) -> Pos {
+    pub const fn rot_right(pos: Pos) -> Pos {
         Self::rot_left(pos).transpose()
     }
 
     //https://math.stackexchange.com/a/733222
-    pub fn rot_left(pos: Pos) -> Pos {
+    pub const fn rot_left(pos: Pos) -> Pos {
         Pos::new(
             pos.row() + pos.col(),
             (BOARD_SIZE - 1) - pos.row() + pos.col(),
@@ -337,40 +416,49 @@ impl Board {
     }
 
     pub fn is_overline(&self, pos: Pos, side: Side) -> bool {
-        self.board0
-            .has_pattern::<6, false>(pos, side, HORIZONTAL_OVERLINE_PATTERNS)
-            || self.board1.has_pattern::<6, false>(
-                pos.transpose(),
-                side,
-                HORIZONTAL_OVERLINE_PATTERNS,
-            )
-            || self.board2.has_pattern::<12, false>(
-                Self::rot_right(pos),
-                side,
-                DIAGONAL_OVERLINE_PATTERNS,
-            )
-            || self.board3.has_pattern::<12, false>(
-                Self::rot_left(pos),
-                side,
-                DIAGONAL_OVERLINE_PATTERNS,
-            )
+        self.board0.has_pattern::<6, false>(
+            pos,
+            side,
+            HORIZONTAL_OVERLINE_PATTERNS,
+            EMPTY_NORMAL_BOARD,
+        ) || self.board1.has_pattern::<6, false>(
+            pos.transpose(),
+            side,
+            HORIZONTAL_OVERLINE_PATTERNS,
+            EMPTY_NORMAL_BOARD,
+        ) || self.board2.has_pattern::<12, false>(
+            Self::rot_right(pos),
+            side,
+            DIAGONAL_OVERLINE_PATTERNS,
+            EMPTY_DIAGONAL_BOARD,
+        ) || self.board3.has_pattern::<12, false>(
+            Self::rot_left(pos),
+            side,
+            DIAGONAL_OVERLINE_PATTERNS,
+            EMPTY_DIAGONAL_BOARD,
+        )
     }
 
     pub fn is_win(&self, pos: Pos, side: Side) -> bool {
         self.board0
-            .has_pattern::<5, false>(pos, side, HORIZONTAL_WIN_PATTERNS)
-            || self
-                .board1
-                .has_pattern::<5, false>(pos.transpose(), side, HORIZONTAL_WIN_PATTERNS)
+            .has_pattern::<5, false>(pos, side, HORIZONTAL_WIN_PATTERNS, EMPTY_NORMAL_BOARD)
+            || self.board1.has_pattern::<5, false>(
+                pos.transpose(),
+                side,
+                HORIZONTAL_WIN_PATTERNS,
+                EMPTY_NORMAL_BOARD,
+            )
             || self.board2.has_pattern::<10, false>(
                 Self::rot_right(pos),
                 side,
                 DIAGONAL_WIN_PATTERNS,
+                EMPTY_DIAGONAL_BOARD,
             )
             || self.board3.has_pattern::<10, false>(
                 Self::rot_left(pos),
                 side,
                 DIAGONAL_WIN_PATTERNS,
+                EMPTY_DIAGONAL_BOARD,
             )
     }
 
@@ -387,29 +475,35 @@ impl Board {
 
         if self
             .board0
-            .has_pattern::<6, true>(pos, side, HORIZONTAL_THREE_PATTERNS)
+            .has_pattern::<6, true>(pos, side, HORIZONTAL_THREE_PATTERNS, NORMAL_BOUNDARY)
         {
             three_count += 1;
         }
 
-        if self
-            .board1
-            .has_pattern::<6, true>(pos.transpose(), side, HORIZONTAL_THREE_PATTERNS)
-        {
+        if self.board1.has_pattern::<6, true>(
+            pos.transpose(),
+            side,
+            HORIZONTAL_THREE_PATTERNS,
+            NORMAL_BOUNDARY,
+        ) {
             three_count += 1;
         }
 
-        if self
-            .board2
-            .has_pattern::<12, true>(Self::rot_right(pos), side, DIAGONAL_THREE_PATTERNS)
-        {
+        if self.board2.has_pattern::<12, true>(
+            Self::rot_right(pos),
+            side,
+            DIAGONAL_THREE_PATTERNS,
+            DIAGONAL_BOUNDARY,
+        ) {
             three_count += 1;
         }
 
-        if self
-            .board3
-            .has_pattern::<12, true>(Self::rot_left(pos), side, DIAGONAL_THREE_PATTERNS)
-        {
+        if self.board3.has_pattern::<12, true>(
+            Self::rot_left(pos),
+            side,
+            DIAGONAL_THREE_PATTERNS,
+            DIAGONAL_BOUNDARY,
+        ) {
             three_count += 1;
         }
 
@@ -427,30 +521,58 @@ impl Board {
 
         let mut count = 0;
 
-        count += self
-            .board0
-            .count_pattern::<5, true>(pos, side, HORIZONTAL_FOUR_PATTERNS);
+        count += self.board0.count_pattern::<5, true>(
+            pos,
+            side,
+            HORIZONTAL_FOUR_PATTERNS,
+            NORMAL_BOUNDARY,
+        );
 
-        count +=
-            self.board1
-                .count_pattern::<5, true>(pos.transpose(), side, HORIZONTAL_FOUR_PATTERNS);
+        count += self.board1.count_pattern::<5, true>(
+            pos.transpose(),
+            side,
+            HORIZONTAL_FOUR_PATTERNS,
+            NORMAL_BOUNDARY,
+        );
 
         count += self.board2.count_pattern::<10, true>(
             Self::rot_right(pos),
             side,
             DIAGONAL_FOUR_PATTERNS,
+            DIAGONAL_BOUNDARY,
         );
 
         count += self.board3.count_pattern::<10, true>(
             Self::rot_left(pos),
             side,
             DIAGONAL_FOUR_PATTERNS,
+            DIAGONAL_BOUNDARY,
         );
 
-        count -= self.board0.count_pattern::<6, true>(pos, side, HORIZONTAL_STRAIGHT_FOUR_PATTERN);
-        count -= self.board1.count_pattern::<6, true>(pos, side, HORIZONTAL_STRAIGHT_FOUR_PATTERN);
-        count -= self.board2.count_pattern::<12, true>(pos, side, DIAGONAL_STRAIGHT_FOUR_PATTERN);
-        count -= self.board3.count_pattern::<12, true>(pos, side, DIAGONAL_STRAIGHT_FOUR_PATTERN);
+        count -= self.board0.count_pattern::<6, true>(
+            pos,
+            side,
+            HORIZONTAL_STRAIGHT_FOUR_PATTERN,
+            NORMAL_BOUNDARY,
+        );
+        count -= self.board1.count_pattern::<6, true>(
+            pos,
+            side,
+            HORIZONTAL_STRAIGHT_FOUR_PATTERN,
+            NORMAL_BOUNDARY,
+        );
+        count -= self.board2.count_pattern::<12, true>(
+            pos,
+            side,
+            DIAGONAL_STRAIGHT_FOUR_PATTERN,
+            DIAGONAL_BOUNDARY,
+        );
+        count -= self.board3.count_pattern::<12, true>(
+            pos,
+            side,
+            DIAGONAL_STRAIGHT_FOUR_PATTERN,
+            DIAGONAL_BOUNDARY,
+        );
 
         count
     }
@@ -560,7 +682,8 @@ impl fmt::Display for Board {
 #[cfg(test)]
 mod tests {
     use super::{
-        BitBoard, Board, PieceBoard, Pos, Side, Square, BOARD_SIZE, DIAGONAL_THREE_PATTERNS,
+        BitBoard, Board, PieceBoard, Pos, Side, Square, BOARD_SIZE, DIAGONAL_BOUNDARY,
+        DIAGONAL_THREE_PATTERNS, EMPTY_DIAGONAL_BOARD, EMPTY_NORMAL_BOARD,
         HORIZONTAL_THREE_PATTERNS,
     };
     use anyhow::Result;
@@ -729,7 +852,8 @@ mod tests {
             diag_board.has_pattern::<12, true>(
                 Board::rot_left("f10".parse()?),
                 Side::Black,
-                DIAGONAL_THREE_PATTERNS
+                DIAGONAL_THREE_PATTERNS,
+                EMPTY_DIAGONAL_BOARD,
             ),
             true
         );
@@ -737,7 +861,8 @@ mod tests {
             diag_board.has_pattern::<12, true>(
                 Board::rot_left("g9".parse()?),
                 Side::Black,
-                DIAGONAL_THREE_PATTERNS
+                DIAGONAL_THREE_PATTERNS,
+                EMPTY_DIAGONAL_BOARD,
             ),
             true
         );
@@ -745,7 +870,8 @@ mod tests {
             diag_board.has_pattern::<12, true>(
                 Board::rot_left("h8".parse()?),
                 Side::Black,
-                DIAGONAL_THREE_PATTERNS
+                DIAGONAL_THREE_PATTERNS,
+                EMPTY_DIAGONAL_BOARD,
             ),
             true
         );
@@ -761,7 +887,8 @@ mod tests {
             board.has_pattern::<6, true>(
                 Pos::from_str("h8")?.transpose(),
                 Side::Black,
-                HORIZONTAL_THREE_PATTERNS
+                HORIZONTAL_THREE_PATTERNS,
+                EMPTY_NORMAL_BOARD,
             ),
             false
         );
@@ -813,6 +940,16 @@ mod tests {
         assert_eq!(board.is_double_four("g8".parse()?, Side::Black), false);
         assert_eq!(board.is_double_four("h8".parse()?, Side::Black), false);
         assert_eq!(board.is_double_four("i8".parse()?, Side::Black), false);
+        Ok(())
+    }
+
+    #[test]
+    fn no_diag_three_at_edge() -> Result<()> {
+        let board: Board = "i1h2f4".parse()?;
+
+        assert_eq!(board.count_threes("i1".parse()?, Side::Black), 0);
+        assert_eq!(board.count_threes("h2".parse()?, Side::Black), 0);
+        assert_eq!(board.count_threes("f4".parse()?, Side::Black), 0);
         Ok(())
     }
 
