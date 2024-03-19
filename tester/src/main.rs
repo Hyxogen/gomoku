@@ -6,6 +6,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use tools::Pos;
+use narabe::board::{Board, Side, Square};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -152,20 +153,27 @@ fn main() {
         let count = random::<u8>() % (15 * 15);
 
         for _ in 0..count {
-            let b: bool = random();
-            let field = if b { Field::Mine } else { Field::Theirs };
+            //let b: bool = random();
+            //let field = if b { Field::Mine } else { Field::Theirs };
 
-            positions.push(((random::<u8>() % 15, random::<u8>() % 15).into(), field));
+            positions.push(((random::<u8>() % 15, random::<u8>() % 15).into(), Field::Mine));
         }
 
         if !test_board(&positions, &mut client1, &mut client2) {
+            let mut board = Board::new();
             eprintln!("field:");
 
-            for (pos, field) in positions {
+            for (pos, field) in &positions {
+                let side = if let Field::Mine = field { Side::Black } else { Side::White };
+                board.set(*pos, Square::Piece(side));
+
                 let field = if let Field::Mine = field { 1 } else { 2 };
                 eprintln!("{},{},{}", pos.col(), pos.row(), field);
             }
+            
             std::process::exit(1);
+        } else {
+            println!("OK");
         }
     }
 }
