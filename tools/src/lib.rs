@@ -53,6 +53,21 @@ pub enum ParsePosError {
     IsZero,
 }
 
+impl fmt::Display for ParsePosError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NoColumn => write!(f, "no column specified"),
+            Self::NotAscii => write!(f, "found non-ascii character"),
+            Self::NoDigits => write!(f, "expected digits"),
+            Self::TooLarge => write!(f, "number too large"),
+            Self::InvalidNum => write!(f, "expected a number"),
+            Self::IsZero => write!(f, "number may not be zero"),
+        }
+    }
+}
+
+impl std::error::Error for ParsePosError {}
+
 impl str::FromStr for Pos {
     type Err = ParsePosError;
 

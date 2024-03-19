@@ -136,8 +136,15 @@ const DIAGONAL_THREE_PATTERNS: &'static [u32] = &[
 //
 // 1) . b b b b
 // 2) b b b b .
-const HORIZONTAL_FOUR_PATTERNS: &'static [u32] = &[0b01111, 0b11110];
-const DIAGONAL_FOUR_PATTERNS: &'static [u32] = &[0b0010101010, 0b010110100];
+// can probably trim the edges of the end of the four patterns as they should be zero anyway
+const HORIZONTAL_FOUR_PATTERNS: &'static [u32] = &[0b01111, 0b11110, 0b10111, 0b11101, 0b11011];
+const DIAGONAL_FOUR_PATTERNS: &'static [u32] = &[
+    0b0010101010,
+    0b010110100,
+    0b0100010101,
+    0b0101010001,
+    0b0101000101,
+];
 
 const HORIZONTAL_WIN_PATTERNS: &'static [u32] = &[0b11111];
 const DIAGONAL_WIN_PATTERNS: &'static [u32] = &[0b0101010101];
@@ -185,12 +192,12 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         }
     }
 
-    pub fn has_pattern<const LEN: usize, const NO_OPPOSING: bool>(
+    pub fn count_pattern<const LEN: usize, const NO_OPPOSING: bool>(
         &self,
         pos: Pos,
         side: Side,
         patterns: &[u32],
-    ) -> bool {
+    ) -> u8 {
         // TODO try branchless variant with accumulator return
         // i.e.:
         // let mut res = false;
@@ -201,6 +208,7 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         // }
         debug_assert!(LEN <= SIZE);
         debug_assert!(LEN > 0);
+        let mut count = 0;
 
         let max = (pos.col()).min(SIZE - LEN);
         let min = pos.col().saturating_sub(LEN - 1);
@@ -216,14 +224,21 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
             }
 
             // TODO check if hand made loop is better optimized than lazy iterators
-            if patterns
+            count += patterns
                 .iter()
-                .any(|&pattern| (((our_row & mask) >> shift) ^ pattern) == 0)
-            {
-                return true;
-            }
+                .filter(|&pattern| (((our_row & mask) >> shift) ^ pattern) == 0)
+                .count() as u8;
         }
-        false
+        count
+    }
+
+    pub fn has_pattern<const LEN: usize, const NO_OPPOSING: bool>(
+        &self,
+        pos: Pos,
+        side: Side,
+        patterns: &[u32],
+    ) -> bool {
+        self.count_pattern::<LEN, NO_OPPOSING>(pos, side, patterns) > 0
     }
 }
 
@@ -316,15 +331,21 @@ impl Board {
     pub fn is_overline(&self, pos: Pos, side: Side) -> bool {
         self.board0
             .has_pattern::<6, false>(pos, side, HORIZONTAL_OVERLINE_PATTERNS)
-            || self
-                .board1
-                .has_pattern::<6, false>(pos.transpose(), side, HORIZONTAL_OVERLINE_PATTERNS)
-            || self
-                .board2
-                .has_pattern::<12, false>(Self::rot_right(pos), side, DIAGONAL_OVERLINE_PATTERNS)
-            || self
-                .board3
-                .has_pattern::<12, false>(Self::rot_left(pos), side, DIAGONAL_OVERLINE_PATTERNS)
+            || self.board1.has_pattern::<6, false>(
+                pos.transpose(),
+                side,
+                HORIZONTAL_OVERLINE_PATTERNS,
+            )
+            || self.board2.has_pattern::<12, false>(
+                Self::rot_right(pos),
+                side,
+                DIAGONAL_OVERLINE_PATTERNS,
+            )
+            || self.board3.has_pattern::<12, false>(
+                Self::rot_left(pos),
+                side,
+                DIAGONAL_OVERLINE_PATTERNS,
+            )
     }
 
     pub fn is_win(&self, pos: Pos, side: Side) -> bool {
@@ -333,12 +354,16 @@ impl Board {
             || self
                 .board1
                 .has_pattern::<5, false>(pos.transpose(), side, HORIZONTAL_WIN_PATTERNS)
-            || self
-                .board2
-                .has_pattern::<10, false>(Self::rot_right(pos), side, DIAGONAL_WIN_PATTERNS)
-            || self
-                .board3
-                .has_pattern::<10, false>(Self::rot_left(pos), side, DIAGONAL_WIN_PATTERNS)
+            || self.board2.has_pattern::<10, false>(
+                Self::rot_right(pos),
+                side,
+                DIAGONAL_WIN_PATTERNS,
+            )
+            || self.board3.has_pattern::<10, false>(
+                Self::rot_left(pos),
+                side,
+                DIAGONAL_WIN_PATTERNS,
+            )
     }
 
     pub fn is_double_three(&self, pos: Pos, side: Side) -> bool {
@@ -394,33 +419,25 @@ impl Board {
 
         let mut count = 0;
 
-        if self
+        count += self
             .board0
-            .has_pattern::<5, true>(pos, side, HORIZONTAL_FOUR_PATTERNS)
-        {
-            count += 1;
-        }
+            .count_pattern::<5, true>(pos, side, HORIZONTAL_FOUR_PATTERNS);
 
-        if self
-            .board1
-            .has_pattern::<5, true>(pos.transpose(), side, HORIZONTAL_FOUR_PATTERNS)
-        {
-            count += 1;
-        }
+        count +=
+            self.board1
+                .count_pattern::<5, true>(pos.transpose(), side, HORIZONTAL_FOUR_PATTERNS);
 
-        if self
-            .board2
-            .has_pattern::<10, true>(Self::rot_right(pos), side, DIAGONAL_FOUR_PATTERNS)
-        {
-            count += 1;
-        }
+        count += self.board2.count_pattern::<10, true>(
+            Self::rot_right(pos),
+            side,
+            DIAGONAL_FOUR_PATTERNS,
+        );
 
-        if self
-            .board3
-            .has_pattern::<10, true>(Self::rot_left(pos), side, DIAGONAL_FOUR_PATTERNS)
-        {
-            count += 1;
-        }
+        count += self.board3.count_pattern::<10, true>(
+            Self::rot_left(pos),
+            side,
+            DIAGONAL_FOUR_PATTERNS,
+        );
 
         count
     }
@@ -756,6 +773,22 @@ mod tests {
         assert_eq!(board.is_win("i8".parse()?, Side::Black), true);
         assert_eq!(board.is_win("j8".parse()?, Side::Black), true);
         assert_eq!(board.is_win("k8".parse()?, Side::Black), true);
+        Ok(())
+    }
+
+    #[test]
+    fn double_four_one_diag_line() -> Result<()> {
+        let board: Board = "d5f7h9j11g8".parse()?;
+
+        assert_eq!(board.is_double_four("g8".parse()?, Side::Black), true);
+        Ok(())
+    }
+
+    #[test]
+    fn double_four_one_horiz_line() -> Result<()> {
+        let board: Board = "e8g8h8i8k8".parse()?;
+
+        assert_eq!(board.is_double_four("h8".parse()?, Side::Black), true);
         Ok(())
     }
 
