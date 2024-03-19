@@ -149,6 +149,7 @@ fn main() {
 
     loop {
         let mut positions: Vec<(Pos, Field)> = Vec::new();
+        let mut board = Board::new();
 
         let count = random::<u8>() % (15 * 15);
 
@@ -156,7 +157,9 @@ fn main() {
             //let b: bool = random();
             //let field = if b { Field::Mine } else { Field::Theirs };
 
-            positions.push(((random::<u8>() % 15, random::<u8>() % 15).into(), Field::Mine));
+            let pos = (random::<u8>() % 15, random::<u8>() % 15).into();
+            positions.push((pos, Field::Mine));
+            board.set(pos, Square::Piece(Side::Black));
         }
 
         if !test_board(&positions, &mut client1, &mut client2) {
@@ -169,6 +172,7 @@ fn main() {
 
                 let field = if let Field::Mine = field { 1 } else { 2 };
                 eprintln!("{},{},{}", pos.col(), pos.row(), field);
+                eprintln!("board: {}", board);
             }
             
             std::process::exit(1);
