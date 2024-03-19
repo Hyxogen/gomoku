@@ -274,6 +274,102 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         // }
         self.count_pattern::<LEN, NO_OPPOSING>(pos, side, patterns, boundary) > 0
     }
+
+    pub fn count_fours(&self, pos: Pos, side: Side) -> u8 {
+        if SIZE == BOARD_SIZE {
+            self.count_fours_horizontal(pos, side)
+        } else {
+            self.count_fours_diagonal(pos, side)
+        }
+    }
+
+    pub fn count_fours_horizontal(&self, pos: Pos, side: Side) -> u8 {
+        debug_assert!(SIZE == BOARD_SIZE);
+        let mask_len = 7;
+
+        // detect four by counting missing piece for a five (i.e. win with no overline)
+        let max = (pos.col()).min(SIZE - mask_len);
+        let min = pos.col().saturating_sub(mask_len - 1);
+
+        let our_row = self.get_row(pos.row(), side);
+        let their_row = self.get_row(pos.row(), !side);
+
+        let mut count = 0;
+        let mut straight = false;
+
+        for shift in min..=max {
+            let win = 0b0111110 << shift;
+            let win_mask = 0b1111111 << shift;
+            let mask = 0b11111 << shift;
+
+            let masked_row = our_row & win_mask;
+            let missing = masked_row ^ win;
+
+            //can never be a four if there is an opposing piece in the 5 piece window
+            if (their_row & mask) == 0 && missing.count_ones() == 1 {
+                //println!("shift={}", shift);
+                //println!("row={:0>15b}", our_row);
+                //println!("win={:0>15b}", win);
+                //println!("msk={:0>15b}", win_mask);
+                //println!("mis={:0>15b}", missing);
+                count += 1;
+
+                //TODO might be faster by just checking all possible straight fours on masked_row
+                if (masked_row.wrapping_shr(masked_row.trailing_zeros()) ^ 0b01111) == 0 {
+                    straight = true;
+                }
+            }
+        }
+
+        if straight {
+            count -= 1
+        }
+        count
+    }
+
+    pub fn count_fours_diagonal(&self, pos: Pos, side: Side) -> u8 {
+        debug_assert!(SIZE == DIAG_SIZE);
+        let mask_len = 14;
+
+        // detect four by counting missing piece for a five (i.e. win with no overline)
+        let max = (pos.col()).min(SIZE - mask_len);
+        let min = pos.col().saturating_sub(mask_len - 1);
+
+        let our_row = self.get_row(pos.row(), side);
+        let their_row = self.get_row(pos.row(), !side);
+
+        let mut count = 0;
+        let mut straight = false;
+
+        for shift in min..=max {
+            let win = 0b00010101010100 << shift;
+            let win_mask = 0b01010101010101 << shift;
+            let mask = 0b0101010101 << shift;
+
+            let masked_row = our_row & win_mask;
+            let missing = masked_row ^ win;
+
+            //println!("shift={}", shift);
+            //println!("row={:0>32b}", our_row);
+            //println!("win={:0>32b}", win);
+            //println!("msk={:0>32b}", win_mask);
+            //println!("mis={:0>32b}", missing);
+            //can never be a four if there is an opposing piece in the 10 piece window
+            if (their_row & mask) == 0 && missing.count_ones() == 1 {
+                count += 1;
+
+                //TODO might be faster by just checking all possible straight fours on masked_row
+                if (masked_row.wrapping_shr(masked_row.trailing_zeros()) ^ 0b0001010101) == 0 {
+                    straight = true;
+                }
+            }
+        }
+
+        if straight {
+            count -= 1
+        }
+        count
+    }
 }
 
 pub struct Board {
@@ -350,7 +446,6 @@ impl Board {
             if n == 0 {
                 break;
             }
-
 
             n -= 1;
             row += 1;
@@ -521,58 +616,10 @@ impl Board {
 
         let mut count = 0;
 
-        count += self.board0.count_pattern::<5, true>(
-            pos,
-            side,
-            HORIZONTAL_FOUR_PATTERNS,
-            NORMAL_BOUNDARY,
-        );
-
-        count += self.board1.count_pattern::<5, true>(
-            pos.transpose(),
-            side,
-            HORIZONTAL_FOUR_PATTERNS,
-            NORMAL_BOUNDARY,
-        );
-
-        count += self.board2.count_pattern::<10, true>(
-            Self::rot_right(pos),
-            side,
-            DIAGONAL_FOUR_PATTERNS,
-            DIAGONAL_BOUNDARY,
-        );
-
-        count += self.board3.count_pattern::<10, true>(
-            Self::rot_left(pos),
-            side,
-            DIAGONAL_FOUR_PATTERNS,
-            DIAGONAL_BOUNDARY,
-        );
-
-        count -= self.board0.count_pattern::<6, true>(
-            pos,
-            side,
-            HORIZONTAL_STRAIGHT_FOUR_PATTERN,
-            NORMAL_BOUNDARY,
-        );
-        count -= self.board1.count_pattern::<6, true>(
-            pos,
-            side,
-            HORIZONTAL_STRAIGHT_FOUR_PATTERN,
-            NORMAL_BOUNDARY,
-        );
-        count -= self.board2.count_pattern::<12, true>(
-            pos,
-            side,
-            DIAGONAL_STRAIGHT_FOUR_PATTERN,
-            DIAGONAL_BOUNDARY,
-        );
-        count -= self.board3.count_pattern::<12, true>(
-            pos,
-            side,
-            DIAGONAL_STRAIGHT_FOUR_PATTERN,
-            DIAGONAL_BOUNDARY,
-        );
+        count += self.board0.count_fours(pos, side);
+        count += self.board1.count_fours(pos.transpose(), side);
+        count += self.board2.count_fours(Self::rot_right(pos), side);
+        count += self.board3.count_fours(Self::rot_left(pos), side);
 
         count
     }
@@ -936,10 +983,10 @@ mod tests {
     fn no_double_four() -> Result<()> {
         let board: Board = "g8h8i8j8".parse()?;
 
-        assert_eq!(board.is_double_four("j8".parse()?, Side::Black), false);
-        assert_eq!(board.is_double_four("g8".parse()?, Side::Black), false);
-        assert_eq!(board.is_double_four("h8".parse()?, Side::Black), false);
-        assert_eq!(board.is_double_four("i8".parse()?, Side::Black), false);
+        assert_eq!(board.count_fours("j8".parse()?, Side::Black), 1);
+        assert_eq!(board.count_fours("g8".parse()?, Side::Black), 1);
+        assert_eq!(board.count_fours("h8".parse()?, Side::Black), 1);
+        assert_eq!(board.count_fours("i8".parse()?, Side::Black), 1);
         Ok(())
     }
 
@@ -950,6 +997,33 @@ mod tests {
         assert_eq!(board.count_threes("i1".parse()?, Side::Black), 0);
         assert_eq!(board.count_threes("h2".parse()?, Side::Black), 0);
         assert_eq!(board.count_threes("f4".parse()?, Side::Black), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn vertical_straight_four() -> Result<()> {
+        let board: Board = "h8h9h10h11".parse()?;
+
+        assert_eq!(board.count_fours("h8".parse()?, Side::Black), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn win_no_four() -> Result<()> {
+        let board: Board = "h8h9h10h11h12".parse()?;
+
+        assert_eq!(board.count_fours("h8".parse()?, Side::Black), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn diag_straight_four() -> Result<()> {
+        let board: Board = "g7h8i9j10".parse()?;
+
+        assert_eq!(board.count_fours("g7".parse()?, Side::Black), 1);
+        assert_eq!(board.count_fours("h8".parse()?, Side::Black), 1);
+        assert_eq!(board.count_fours("i9".parse()?, Side::Black), 1);
+        assert_eq!(board.count_fours("j10".parse()?, Side::Black), 1);
         Ok(())
     }
 
