@@ -136,6 +136,11 @@ const DIAGONAL_THREE_PATTERNS: &'static [u32] = &[
 //
 // 1) . b b b b
 // 2) b b b b .
+//
+// IT IS POSSIBLE TO GET A DOUBLE FOUR ON ONE LINE
+// example: b . b . b . b
+// the middle here is a double four
+//
 // can probably trim the edges of the end of the four patterns as they should be zero anyway
 const HORIZONTAL_FOUR_PATTERNS: &'static [u32] = &[0b01111, 0b11110, 0b10111, 0b11101, 0b11011];
 const DIAGONAL_FOUR_PATTERNS: &'static [u32] = &[
@@ -145,6 +150,9 @@ const DIAGONAL_FOUR_PATTERNS: &'static [u32] = &[
     0b0101010001,
     0b0101000101,
 ];
+
+const HORIZONTAL_STRAIGHT_FOUR_PATTERN: &'static [u32] = &[0b011110];
+const DIAGONAL_STRAIGHT_FOUR_PATTERN: &'static [u32] = &[0b000101010100];
 
 const HORIZONTAL_WIN_PATTERNS: &'static [u32] = &[0b11111];
 const DIAGONAL_WIN_PATTERNS: &'static [u32] = &[0b0101010101];
@@ -438,6 +446,11 @@ impl Board {
             side,
             DIAGONAL_FOUR_PATTERNS,
         );
+
+        count -= self.board0.count_pattern::<6, true>(pos, side, HORIZONTAL_STRAIGHT_FOUR_PATTERN);
+        count -= self.board1.count_pattern::<6, true>(pos, side, HORIZONTAL_STRAIGHT_FOUR_PATTERN);
+        count -= self.board2.count_pattern::<12, true>(pos, side, DIAGONAL_STRAIGHT_FOUR_PATTERN);
+        count -= self.board3.count_pattern::<12, true>(pos, side, DIAGONAL_STRAIGHT_FOUR_PATTERN);
 
         count
     }
@@ -789,6 +802,17 @@ mod tests {
         let board: Board = "e8g8h8i8k8".parse()?;
 
         assert_eq!(board.is_double_four("h8".parse()?, Side::Black), true);
+        Ok(())
+    }
+
+    #[test]
+    fn no_double_four() -> Result<()> {
+        let board: Board = "g8h8i8j8".parse()?;
+
+        assert_eq!(board.is_double_four("j8".parse()?, Side::Black), false);
+        assert_eq!(board.is_double_four("g8".parse()?, Side::Black), false);
+        assert_eq!(board.is_double_four("h8".parse()?, Side::Black), false);
+        assert_eq!(board.is_double_four("i8".parse()?, Side::Black), false);
         Ok(())
     }
 
