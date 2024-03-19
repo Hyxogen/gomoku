@@ -275,6 +275,32 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         self.count_pattern::<LEN, NO_OPPOSING>(pos, side, patterns, boundary) > 0
     }
 
+    pub fn has_three_horizontal(&self, pos: Pos, side: Side) -> bool {
+        //TODO detect threes by checking if one piece away from straight four (similar how fours
+        //are detected)
+        debug_assert!(SIZE == BOARD_SIZE);
+        let mask_len = 6;
+
+        let max = (pos.col()).min(SIZE - mask_len);
+        let min = pos.col().saturating_sub(mask_len - 1);
+
+        let our_row = self.get_row(pos.row(), side);
+        let their_row = self.get_row(pos.row(), !side);
+
+        for shift in min..=max {
+            let four = 0b011110 << shift;
+            let four_mask = 0b111111 << shift;
+
+            let missing = (our_row & four_mask) ^ four;
+
+            if (their_row & four_mask) == 0 && missing.count_ones() == 1 {
+                return true;
+            }
+        }
+
+        false
+    }
+
     pub fn count_fours(&self, pos: Pos, side: Side) -> u8 {
         if SIZE == BOARD_SIZE {
             self.count_fours_horizontal(pos, side)
@@ -304,6 +330,8 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
 
             let masked_row = our_row & win_mask;
             let missing = masked_row ^ win;
+
+            // TODO: Check if this code actually properly works, and does not falsely report fours
 
             //can never be a four if there is an opposing piece in the 5 piece window
             if (their_row & mask) == 0 && missing.count_ones() == 1 {
@@ -610,9 +638,9 @@ impl Board {
     }
 
     pub fn count_fours(&self, pos: Pos, side: Side) -> u8 {
-        if self.board0.at(pos) != Square::Piece(side) {
+        /*if self.board0.at(pos) != Square::Piece(side) {
             return 0;
-        }
+        }*/
 
         let mut count = 0;
 
@@ -1012,7 +1040,15 @@ mod tests {
     fn win_no_four() -> Result<()> {
         let board: Board = "h8h9h10h11h12".parse()?;
 
+        assert_eq!(board.count_fours("h6".parse()?, Side::Black), 0);
+        assert_eq!(board.count_fours("h7".parse()?, Side::Black), 0);
         assert_eq!(board.count_fours("h8".parse()?, Side::Black), 0);
+        assert_eq!(board.count_fours("h9".parse()?, Side::Black), 0);
+        assert_eq!(board.count_fours("h10".parse()?, Side::Black), 0);
+        assert_eq!(board.count_fours("h11".parse()?, Side::Black), 0);
+        assert_eq!(board.count_fours("h12".parse()?, Side::Black), 0);
+        assert_eq!(board.count_fours("h13".parse()?, Side::Black), 0);
+        assert_eq!(board.count_fours("h14".parse()?, Side::Black), 0);
         Ok(())
     }
 
