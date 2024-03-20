@@ -230,13 +230,14 @@ fn test_single<'a, R1, W1, R2, W2>(
 {
     let (resp1, resp2) = get_forbids(positions, bot1, bot2);
     if resp1 != resp2 {
+        println!("{} {}", resp1.len(), resp2.len());
         print_differences(&resp1, &resp2);
+
         let board = pos_to_board(positions);
+        eprintln!("board: {}", board);
+
         let reduced = reduce(positions, (&resp1, &resp2), bot1, bot2);
         let areduced = reduce_aggresive(&reduced, bot1, bot2);
-
-
-        eprintln!("board: {}", board);
         eprintln!("reduced board: {}", pos_to_board(&reduced));
 
         eprintln!();
