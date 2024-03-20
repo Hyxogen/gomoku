@@ -182,7 +182,7 @@ fn pos_to_board(positions: &Vec<(Pos, Field)>) -> Board {
 }
 
 fn print_differences(resp1: &HashSet<Pos>, resp2: &HashSet<Pos>) {
-    let mut stdout = StandardStream::stdout(ColorChoice::Auto);
+    let mut stdout = StandardStream::stdout(ColorChoice::Always);
     writeln!(stdout, "BOT 1:").unwrap();
     for pos in resp1 {
         if !resp2.contains(pos) {
@@ -230,11 +230,11 @@ fn test_single<'a, R1, W1, R2, W2>(
 {
     let (resp1, resp2) = get_forbids(positions, bot1, bot2);
     if resp1 != resp2 {
+        print_differences(&resp1, &resp2);
         let board = pos_to_board(positions);
         let reduced = reduce(positions, (&resp1, &resp2), bot1, bot2);
         let areduced = reduce_aggresive(&reduced, bot1, bot2);
 
-        print_differences(&resp1, &resp2);
 
         eprintln!("board: {}", board);
         eprintln!("reduced board: {}", pos_to_board(&reduced));
