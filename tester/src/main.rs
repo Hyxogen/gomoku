@@ -3,6 +3,7 @@ use narabe::board::{Board, Side, Square};
 use protocol::{BrainCommand, BrainCommandReader, Field, ManagerCommand};
 use rand::random;
 use std::borrow::Cow;
+use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -65,12 +66,11 @@ where
     }
 }
 
-//e3d4f4i5j5a6c6f7b9c12b14g14
-fn test_board<'a, R1, W1, R2, W2>(
+fn get_forbids<'a, R1, W1, R2, W2>(
     pos: &Vec<(Pos, Field)>,
     bot1: &mut ManagerClient<'a, R1, W1>,
     bot2: &mut ManagerClient<'a, R2, W2>,
-) -> bool
+) -> (HashSet<Pos>, HashSet<Pos>)
 where
     R1: Iterator,
     R1::Item: AsRef<str>,
@@ -86,34 +86,63 @@ where
 
     let resp1 = bot1.next().unwrap();
     let resp2 = bot2.next().unwrap();
-
     match (resp1, resp2) {
-        (BrainCommand::Forbid(pos1), BrainCommand::Forbid(pos2)) => {
-            let mut pos1 = pos1.into_owned();
-            let mut pos2 = pos2.into_owned();
-
-            pos1.sort();
-            pos2.sort();
-
-            if pos1 != pos2 {
-                eprintln!("different forbidden positions!");
-
-                eprintln!("bot1:");
-                for pos in pos1 {
-                    eprintln!("{} row={} col={}", pos, pos.row(), pos.col());
-                }
-
-                eprintln!("bot2:");
-                for pos in pos2 {
-                    eprintln!("{} row={} col={}", pos, pos.row(), pos.col());
-                }
-                false
-            } else {
-                true
-            }
-        }
+        (BrainCommand::Forbid(pos1), BrainCommand::Forbid(pos2)) => (
+            pos1.into_owned().into_iter().collect(),
+            pos2.into_owned().into_iter().collect(),
+        ),
         _ => panic!("invalid response"),
     }
+}
+
+fn reduce<'a, R1, W1, R2, W2>(
+    pos: &Vec<(Pos, Field)>,
+    org: (&HashSet<Pos>, &HashSet<Pos>),
+    bot1: &mut ManagerClient<'a, R1, W1>,
+    bot2: &mut ManagerClient<'a, R2, W2>,
+) -> Vec<(Pos, Field)>
+where
+    R1: Iterator,
+    R1::Item: AsRef<str>,
+    W1: Write,
+    R2: Iterator,
+    R2::Item: AsRef<str>,
+    W2: Write,
+{
+    let mut reduced = pos.clone();
+    'outer: loop {
+        for skip in 0..reduced.len() {
+            let attempt = reduced
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != skip)
+                .map(|(_, v)| *v)
+                .collect();
+
+            let new = get_forbids(&attempt, bot1, bot2);
+
+            if *org.0 == new.0 && *org.1 == new.1 {
+                reduced = attempt;
+                continue 'outer;
+            }
+        }
+        break;
+    }
+    reduced
+}
+
+fn pos_to_board(positions: &Vec<(Pos, Field)>) -> Board {
+    let mut board = Board::new();
+
+    for (pos, field) in positions {
+        let side = if let Field::Mine = field {
+            Side::Black
+        } else {
+            Side::White
+        };
+        board.set(*pos, Square::Piece(side));
+    }
+    board
 }
 
 fn test_single<'a, R1, W1, R2, W2>(
@@ -128,23 +157,29 @@ fn test_single<'a, R1, W1, R2, W2>(
     R2::Item: AsRef<str>,
     W2: Write,
 {
-    if !test_board(positions, bot1, bot2) {
-        let mut board = Board::new();
-        eprintln!("field:");
+    let (resp1, resp2) = get_forbids(positions, bot1, bot2);
+    if resp1 != resp2 {
+        let board = pos_to_board(positions);
+        let reduced = reduce(positions, (&resp1, &resp2), bot1, bot2);
 
-        for (pos, field) in positions {
-            let side = if let Field::Mine = field {
-                Side::Black
-            } else {
-                Side::White
-            };
-            board.set(*pos, Square::Piece(side));
+        println!("bot1:");
+        for pos in resp1.iter() {
+            println!("{} row={} col={}", pos, pos.row(), pos.col());
+        }
+        if resp1.is_empty() {
+            println!("NONE");
+        }
 
-            let field = if let Field::Mine = field { 1 } else { 2 };
-            eprintln!("{},{},{}", pos.col(), pos.row(), field);
+        println!("bot2:");
+        for pos in resp2.iter() {
+            println!("{} row={} col={}", pos, pos.row(), pos.col());
+        }
+        if resp2.is_empty() {
+            println!("NONE");
         }
 
         eprintln!("board: {}", board);
+        eprintln!("reduced board: {}", pos_to_board(&reduced));
         std::process::exit(1);
     } else {
         println!("OK");
