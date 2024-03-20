@@ -366,9 +366,6 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
 
         let mut count = 0;
         let mut straight = false;
-        println!("");
-        println!("");
-        println!("{}", pos);
 
         for shift in min..=max {
             let win = 0b0111110 << shift;
@@ -378,14 +375,14 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
             let masked_row = our_row & win_mask;
             let missing = masked_row ^ win;
 
-            println!("their_row={:0>32b}", their_row);
-            println!("OUR_ROW  ={:0>32b}", our_row);
-            println!("four     ={:0>32b}", win);
-            println!("four mask={:0>32b}", win_mask);
-            println!("missing  ={:0>32b}", missing);
-            println!("");
-            println!("1) {}", (their_row & mask) == 0);
-            println!("4) {}", missing.count_ones() == 1);
+            //println!("their_row={:0>32b}", their_row);
+            //println!("OUR_ROW  ={:0>32b}", our_row);
+            //println!("four     ={:0>32b}", win);
+            //println!("four mask={:0>32b}", win_mask);
+            //println!("missing  ={:0>32b}", missing);
+            //println!("");
+            //println!("1) {}", (their_row & mask) == 0);
+            //println!("4) {}", missing.count_ones() == 1);
 
 
             // TODO: Check if this code actually properly works, and does not falsely report fours
