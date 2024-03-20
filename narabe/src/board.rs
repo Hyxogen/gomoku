@@ -283,11 +283,13 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         }
     }
 
+    // NOTE: this function will falsely report a five as a three. This should probably not be a
+    // problem anywhere
     pub fn has_three_horizontal(&self, pos: Pos, side: Side) -> bool {
         //TODO detect threes by checking if one piece away from straight four (similar how fours
         //are detected)
         debug_assert!(SIZE == BOARD_SIZE);
-        let mask_len = 6;
+        let mask_len = 8;
 
         let max = (pos.col()).min(SIZE - mask_len);
         let min = pos.col().saturating_sub(mask_len - 1);
@@ -296,12 +298,16 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         let their_row = self.get_row(pos.row(), !side);
 
         for shift in min..=max {
-            let four = 0b011110 << shift;
-            let four_mask = 0b111111 << shift;
+            let four = 0b00111100 << shift;
+            let four_mask = 0b01111110 << shift;
+            let overline_mask = 0b10000001 << shift;
 
             let missing = (our_row & four_mask) ^ four;
 
-            if (their_row & four_mask) == 0 && missing.count_ones() == 1 {
+            if (their_row & four_mask) == 0
+                && (our_row & overline_mask) == 0
+                && missing.count_ones() == 1
+            {
                 return true;
             }
         }
@@ -310,7 +316,7 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
 
     pub fn has_three_diagonal(&self, pos: Pos, side: Side) -> bool {
         debug_assert!(SIZE == DIAG_SIZE);
-        let mask_len = 12;
+        let mask_len = 16;
 
         let max = (pos.col()).min(SIZE - mask_len);
         let min = pos.col().saturating_sub(mask_len - 1);
@@ -320,13 +326,15 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         let border_row = DIAGONAL_BOUNDARY.row(pos.row());
 
         for shift in min..=max {
-            let four = 0b000101010100 << shift;
-            let four_mask = 0b010101010101 << shift;
+            let four = 0b0000010101010000 << shift;
+            let four_mask = 0b0001010101010100 << shift;
+            let overline_mask = 0b0100000000000001 << shift;
 
             let missing = (our_row & four_mask) ^ four;
 
             if (their_row & four_mask) == 0
                 && (border_row & four_mask) == 0
+                && (our_row & overline_mask) == 0
                 && missing.count_ones() == 1
             {
                 return true;
@@ -1086,6 +1094,18 @@ mod tests {
 
         board.set(pos, false);
         assert_eq!(board.at(pos), false);
+    }
+
+    #[test]
+    fn overline_is_not_three() -> Result<()> {
+        let board: Board = "e8f8h8j8".parse()?;
+
+        assert_eq!(board.count_threes("e8".parse()?, Side::Black), 0);
+        assert_eq!(board.count_threes("f8".parse()?, Side::Black), 0);
+        assert_eq!(board.count_threes("h8".parse()?, Side::Black), 0);
+        assert_eq!(board.count_threes("j8".parse()?, Side::Black), 0);
+
+        Ok(())
     }
 
     #[test]
