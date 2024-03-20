@@ -131,6 +131,41 @@ where
     reduced
 }
 
+fn reduce_aggresive<'a, R1, W1, R2, W2>(
+    pos: &Vec<(Pos, Field)>,
+    bot1: &mut ManagerClient<'a, R1, W1>,
+    bot2: &mut ManagerClient<'a, R2, W2>,
+) -> Vec<(Pos, Field)>
+where
+    R1: Iterator,
+    R1::Item: AsRef<str>,
+    W1: Write,
+    R2: Iterator,
+    R2::Item: AsRef<str>,
+    W2: Write,
+{
+    let mut reduced = pos.clone();
+    'outer: loop {
+        for skip in 0..reduced.len() {
+            let attempt = reduced
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| *i != skip)
+                .map(|(_, v)| *v)
+                .collect();
+
+            let (resp1, resp2) = get_forbids(&attempt, bot1, bot2);
+
+            if resp1 != resp2 {
+                reduced = attempt;
+                continue 'outer;
+            }
+        }
+        break;
+    }
+    reduced
+}
+
 fn pos_to_board(positions: &Vec<(Pos, Field)>) -> Board {
     let mut board = Board::new();
 
@@ -161,6 +196,7 @@ fn test_single<'a, R1, W1, R2, W2>(
     if resp1 != resp2 {
         let board = pos_to_board(positions);
         let reduced = reduce(positions, (&resp1, &resp2), bot1, bot2);
+        let areduced = reduce_aggresive(&reduced, bot1, bot2);
 
         println!("bot1:");
         for pos in resp1.iter() {
@@ -180,6 +216,7 @@ fn test_single<'a, R1, W1, R2, W2>(
 
         eprintln!("board: {}", board);
         eprintln!("reduced board: {}", pos_to_board(&reduced));
+        eprintln!("aggresively reduced board: {}", pos_to_board(&areduced));
         std::process::exit(1);
     } else {
         println!("OK");
