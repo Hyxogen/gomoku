@@ -64,6 +64,16 @@ impl<const SIZE: usize> BitBoard<SIZE> {
         }
     }
 
+    pub const fn not(mut self) -> Self {
+        let mut i = 0;
+
+        while i < SIZE {
+            self.rows[i] = !self.rows[i];
+            i += 1;
+        }
+        self
+    }
+
     pub const fn row(&self, row: usize) -> u32 {
         self.rows[row]
     }
@@ -122,60 +132,6 @@ impl<const SIZE: usize> fmt::Debug for PieceBoard<SIZE> {
     }
 }
 
-// types of threes:
-// b = our piece
-// . = empty square
-//
-// 1) . . b b b .
-// 2) . b b b . .
-// 3) . b b . b .
-// 4) . b . b b .
-//
-//
-// It is impossible to get a double three on a single row with one move. Even with overline
-// allowed
-// *TODO prove by exhaustion
-//
-const HORIZONTAL_THREE_PATTERNS: &'static [u32] = &[0b001110, 0b011100, 0b011010, 0b010110];
-const DIAGONAL_THREE_PATTERNS: &'static [u32] = &[
-    0b000001010100,
-    0b000101010000,
-    0b000101000100,
-    0b000100010100,
-];
-
-// types of fours:
-// b = our piece
-// . = empty square
-//
-// 1) . b b b b
-// 2) b b b b .
-//
-// IT IS POSSIBLE TO GET A DOUBLE FOUR ON ONE LINE
-// example: b . b . b . b
-// the middle here is a double four
-//
-// can probably trim the edges of the end of the four patterns as they should be zero anyway
-const HORIZONTAL_FOUR_PATTERNS: &'static [u32] = &[0b01111, 0b11110, 0b10111, 0b11101, 0b11011];
-const DIAGONAL_FOUR_PATTERNS: &'static [u32] = &[
-    0b0010101010,
-    0b010110100,
-    0b0100010101,
-    0b0101010001,
-    0b0101000101,
-];
-
-const HORIZONTAL_STRAIGHT_FOUR_PATTERN: &'static [u32] = &[0b011110];
-const DIAGONAL_STRAIGHT_FOUR_PATTERN: &'static [u32] = &[0b000101010100];
-
-const HORIZONTAL_WIN_PATTERNS: &'static [u32] = &[0b11111];
-const DIAGONAL_WIN_PATTERNS: &'static [u32] = &[0b0101010101];
-
-const HORIZONTAL_OVERLINE_PATTERNS: &'static [u32] = &[0b111111];
-const DIAGONAL_OVERLINE_PATTERNS: &'static [u32] = &[0b010101010101];
-
-const EMPTY_NORMAL_BOARD: &'static BitBoard<BOARD_SIZE> = &BitBoard::new();
-const EMPTY_DIAGONAL_BOARD: &'static BitBoard<DIAG_SIZE> = &BitBoard::new();
 const NORMAL_BOUNDARY: &'static BitBoard<BOARD_SIZE> = &Board::normal_boundary_board();
 const DIAGONAL_BOUNDARY: &'static BitBoard<DIAG_SIZE> = &Board::diag_boundary_board();
 
@@ -219,68 +175,35 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         }
     }
 
-    pub fn count_pattern<const LEN: usize, const NO_OPPOSING: bool>(
-        &self,
-        pos: Pos,
-        side: Side,
-        patterns: &[u32],
-        boundary: &BitBoard<SIZE>,
-    ) -> u8 {
-        debug_assert!(LEN <= SIZE);
-        debug_assert!(LEN > 0);
-        let mut count = 0;
-
-        let max = (pos.col()).min(SIZE - LEN);
-        let min = pos.col().saturating_sub(LEN - 1);
-
-        let our_row = self.get_row(pos.row(), side);
-        let their_row = self.get_row(pos.row(), !side);
-        let boundary_mask = boundary.row(pos.row());
-
-        for shift in min..=max {
-            let mask = ((1 << LEN) - 1) << shift;
-
-            if NO_OPPOSING && (their_row & mask) != 0 {
-                continue;
-            }
-            if (boundary_mask & mask) != 0 {
-                continue;
-            }
-
-            // TODO check if hand made loop is better optimized than lazy iterators
-            count += patterns
-                .iter()
-                .filter(|&pattern| (((our_row & mask) >> shift) ^ pattern) == 0)
-                .count() as u8;
-        }
-        count
-    }
-
-    pub fn has_pattern<const LEN: usize, const NO_OPPOSING: bool>(
-        &self,
-        pos: Pos,
-        side: Side,
-        patterns: &[u32],
-        boundary: &BitBoard<SIZE>,
-    ) -> bool {
-        // TODO probably better if specialized
-        // TODO try branchless variant with accumulator return
-        // i.e.:
-        // let mut res = false;
-        // ...
-        // if is_three && !opposing_piece_in_window {
-        //  res = true
-        //  continue
-        // }
-        self.count_pattern::<LEN, NO_OPPOSING>(pos, side, patterns, boundary) > 0
-    }
-
     pub fn has_three(&self, pos: Pos, side: Side) -> bool {
         if SIZE == BOARD_SIZE {
             self.has_three_horizontal(pos, side)
         } else {
             self.has_three_diagonal(pos, side)
         }
+    }
+
+    fn is_pattern(&self, pos: Pos, side: Side, pattern: u32, len: usize) -> bool {
+        let max = (pos.col()).min(SIZE - len);
+        let min = pos.col().saturating_sub(len - 1);
+
+        let our_row = self.get_row(pos.row(), side);
+        for shift in min..=max {
+            let shifted = pattern << shift;
+
+            if (our_row & shifted) == shifted {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn is_overline(&self, pos: Pos, side: Side) -> bool {
+        self.is_pattern(pos, side, 0b111111, 6)
+    }
+
+    pub fn is_win(&self, pos: Pos, side: Side) -> bool {
+        self.is_pattern(pos, side, 0b11111, 5)
     }
 
     // NOTE: this function will falsely report a five as a three. This should probably not be a
@@ -328,9 +251,9 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         let border_row = DIAGONAL_BOUNDARY.row(pos.row());
 
         for shift in min..=max {
-            let four = 0b000101010100 << shift;
-            let four_mask = 0b010101010101 << shift;
-            let overline_mask = !(0b111111111111u32.wrapping_shl((shift as u32).saturating_sub(1)));
+            let four = 0b011110 << shift;
+            let four_mask = 0b111111 << shift;
+            let overline_mask = 0b10000001u32.wrapping_shl((shift as u32).saturating_sub(1));
 
             let missing = (our_row & four_mask) ^ four;
 
@@ -339,6 +262,12 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
                 && (our_row & overline_mask) == 0
                 && missing.count_ones() == 1
             {
+                //println!("our row  ={:0>32b}", our_row);
+                //println!("four     ={:0>32b}", four);
+                //println!("four mask={:0>32b}", four_mask);
+                //println!("missing  ={:0>32b}", missing);
+                //println!("overline ={:0>32b}", overline_mask);
+                //println!("border   ={:0>32b}", border_row);
                 return true;
             }
         }
@@ -412,7 +341,7 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
 
     pub fn count_fours_diagonal(&self, pos: Pos, side: Side) -> u8 {
         debug_assert!(SIZE == DIAG_SIZE);
-        let mask_len = 14;
+        let mask_len = 7;
 
         // detect four by counting missing piece for a five (i.e. win with no overline)
         let max = (pos.col()).min(SIZE - mask_len);
@@ -425,24 +354,19 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         let mut straight = false;
 
         for shift in min..=max {
-            let win = 0b00010101010100 << shift;
-            let win_mask = 0b01010101010101 << shift;
-            let mask = 0b0101010101 << shift;
+            let win = 0b0111110 << shift;
+            let win_mask = 0b1111111 << shift;
+            let mask = 0b11111 << shift;
 
             let masked_row = our_row & win_mask;
             let missing = masked_row ^ win;
 
-            //println!("shift={}", shift);
-            //println!("row={:0>32b}", our_row);
-            //println!("win={:0>32b}", win);
-            //println!("msk={:0>32b}", win_mask);
-            //println!("mis={:0>32b}", missing);
-            //can never be a four if there is an opposing piece in the 10 piece window
+            //can never be a four if there is an opposing piece in the 5 piece window
             if (their_row & mask) == 0 && missing.count_ones() == 1 {
                 count += 1;
 
                 //TODO might be faster by just checking all possible straight fours on masked_row
-                if masked_row.wrapping_shr(masked_row.trailing_zeros()) == 0b0001010101 {
+                if masked_row.wrapping_shr(masked_row.trailing_zeros()) == 0b01111 {
                     straight = true;
                 }
             }
@@ -510,52 +434,48 @@ impl Board {
     }
 
     pub const fn diag_boundary_board() -> BitBoard<DIAG_SIZE> {
-        let mut board: BitBoard<DIAG_SIZE> = BitBoard::filled();
-
-        let mut n = 14;
+        let mut board: BitBoard<DIAG_SIZE> = BitBoard::new();
         let mut row = 0;
 
-        loop {
-            let mut i = n;
-
-            while i <= 14 {
-                board = board.set_move(Pos::new(row, i), false);
-                board = board.set_move(Pos::new(row, DIAG_SIZE - i - 1), false);
-
-                board = board.set_move(Pos::new(DIAG_SIZE - row - 1, i), false);
-                board = board.set_move(Pos::new(DIAG_SIZE - row - 1, DIAG_SIZE - i - 1), false);
-                i += 1;
+        while row < BOARD_SIZE {
+            let mut col = 0;
+            while col < BOARD_SIZE {
+                let pos = Pos::new(row, col);
+                board = board.set_move(Self::diag_right(pos), true);
+                col += 1;
             }
-
-            if n == 0 {
-                break;
-            }
-
-            n -= 1;
             row += 1;
         }
-        board
+
+        board.not()
     }
-    /*
-     * Rust...
-     * pub const fn boundary_board<const SIZE: usize>() -> &'static BitBoard<SIZE> {
-        match SIZE {
-            15 => {
-                NORMAL_BOUNDARY
-            }
-        }
-    }*/
 
     pub fn at(&self, pos: Pos) -> Square {
         self.board0.at(pos)
     }
 
-    pub const fn rot_right(pos: Pos) -> Pos {
+    pub const fn diag_right(pos: Pos) -> Pos {
+        let pos = Self::rot_right(pos);
+        let v = (DIAG_SIZE / 2).abs_diff(pos.row());
+        let pos = Pos::new(pos.row(), pos.col() - v);
+        let pos = Pos::new(pos.row(), pos.col() - (pos.col() / 2));
+        pos
+    }
+
+    pub const fn diag_left(pos: Pos) -> Pos {
+        let pos = Self::rot_left(pos);
+        let v = (DIAG_SIZE / 2).abs_diff(pos.row());
+        let pos = Pos::new(pos.row(), pos.col() - v);
+        let pos = Pos::new(pos.row(), pos.col() - (pos.col() / 2));
+        pos
+    }
+
+    const fn rot_right(pos: Pos) -> Pos {
         Self::rot_left(pos).transpose()
     }
 
     //https://math.stackexchange.com/a/733222
-    pub const fn rot_left(pos: Pos) -> Pos {
+    const fn rot_left(pos: Pos) -> Pos {
         Pos::new(
             pos.row() + pos.col(),
             (BOARD_SIZE - 1) - pos.row() + pos.col(),
@@ -565,8 +485,8 @@ impl Board {
     pub fn set(&mut self, pos: Pos, val: Square) {
         self.board0.set(pos, val);
         self.board1.set(pos.transpose(), val);
-        self.board2.set(Self::rot_right(pos), val);
-        self.board3.set(Self::rot_left(pos), val);
+        self.board2.set(Self::diag_right(pos), val);
+        self.board3.set(Self::diag_left(pos), val);
     }
 
     pub fn is_oob(&self, pos: Pos) -> bool {
@@ -588,57 +508,24 @@ impl Board {
                 let val = self.board0.at(pos);
 
                 assert_eq!(self.board1.at(pos.transpose()), val);
-                assert_eq!(self.board2.at(Self::rot_right(pos)), val);
-                assert_eq!(self.board3.at(Self::rot_left(pos)), val);
+                assert_eq!(self.board2.at(Self::diag_right(pos)), val);
+                assert_eq!(self.board3.at(Self::diag_left(pos)), val);
             }
         }
     }
 
     pub fn is_overline(&self, pos: Pos, side: Side) -> bool {
-        self.board0.has_pattern::<6, false>(
-            pos,
-            side,
-            HORIZONTAL_OVERLINE_PATTERNS,
-            EMPTY_NORMAL_BOARD,
-        ) || self.board1.has_pattern::<6, false>(
-            pos.transpose(),
-            side,
-            HORIZONTAL_OVERLINE_PATTERNS,
-            EMPTY_NORMAL_BOARD,
-        ) || self.board2.has_pattern::<12, false>(
-            Self::rot_right(pos),
-            side,
-            DIAGONAL_OVERLINE_PATTERNS,
-            EMPTY_DIAGONAL_BOARD,
-        ) || self.board3.has_pattern::<12, false>(
-            Self::rot_left(pos),
-            side,
-            DIAGONAL_OVERLINE_PATTERNS,
-            EMPTY_DIAGONAL_BOARD,
-        )
+        self.board0.is_overline(pos, side) || 
+        self.board1.is_overline(pos, side) || 
+        self.board2.is_overline(pos, side) || 
+        self.board3.is_overline(pos, side)
     }
 
     pub fn is_win(&self, pos: Pos, side: Side) -> bool {
-        self.board0
-            .has_pattern::<5, false>(pos, side, HORIZONTAL_WIN_PATTERNS, EMPTY_NORMAL_BOARD)
-            || self.board1.has_pattern::<5, false>(
-                pos.transpose(),
-                side,
-                HORIZONTAL_WIN_PATTERNS,
-                EMPTY_NORMAL_BOARD,
-            )
-            || self.board2.has_pattern::<10, false>(
-                Self::rot_right(pos),
-                side,
-                DIAGONAL_WIN_PATTERNS,
-                EMPTY_DIAGONAL_BOARD,
-            )
-            || self.board3.has_pattern::<10, false>(
-                Self::rot_left(pos),
-                side,
-                DIAGONAL_WIN_PATTERNS,
-                EMPTY_DIAGONAL_BOARD,
-            )
+        self.board0.is_win(pos, side) || 
+        self.board1.is_win(pos, side) || 
+        self.board2.is_win(pos, side) || 
+        self.board3.is_win(pos, side)
     }
 
     pub fn is_double_three(&self, pos: Pos, side: Side) -> bool {
@@ -658,10 +545,10 @@ impl Board {
         if self.board1.has_three(pos.transpose(), side) {
             three_count += 1;
         }
-        if self.board2.has_three(Self::rot_right(pos), side) {
+        if self.board2.has_three(Self::diag_right(pos), side) {
             three_count += 1;
         }
-        if self.board3.has_three(Self::rot_left(pos), side) {
+        if self.board3.has_three(Self::diag_left(pos), side) {
             three_count += 1;
         }
 
@@ -681,8 +568,8 @@ impl Board {
 
         count += self.board0.count_fours(pos, side);
         count += self.board1.count_fours(pos.transpose(), side);
-        count += self.board2.count_fours(Self::rot_right(pos), side);
-        count += self.board3.count_fours(Self::rot_left(pos), side);
+        count += self.board2.count_fours(Self::diag_right(pos), side);
+        count += self.board3.count_fours(Self::diag_left(pos), side);
 
         count
     }
@@ -793,11 +680,8 @@ impl fmt::Display for Board {
 mod tests {
     use super::{
         BitBoard, Board, PieceBoard, Pos, Side, Square, BOARD_SIZE, DIAGONAL_BOUNDARY,
-        DIAGONAL_THREE_PATTERNS, EMPTY_DIAGONAL_BOARD, EMPTY_NORMAL_BOARD,
-        HORIZONTAL_THREE_PATTERNS,
     };
     use anyhow::Result;
-    use std::str::FromStr;
 
     #[test]
     fn empty_board() {
@@ -956,52 +840,18 @@ mod tests {
     #[test]
     fn diagonal_three() -> Result<()> {
         let board: Board = "f10g9h8".parse()?;
-        let diag_board = board.top_left_bot_right();
 
-        assert_eq!(
-            diag_board.has_pattern::<12, true>(
-                Board::rot_left("f10".parse()?),
-                Side::Black,
-                DIAGONAL_THREE_PATTERNS,
-                EMPTY_DIAGONAL_BOARD,
-            ),
-            true
-        );
-        assert_eq!(
-            diag_board.has_pattern::<12, true>(
-                Board::rot_left("g9".parse()?),
-                Side::Black,
-                DIAGONAL_THREE_PATTERNS,
-                EMPTY_DIAGONAL_BOARD,
-            ),
-            true
-        );
-        assert_eq!(
-            diag_board.has_pattern::<12, true>(
-                Board::rot_left("h8".parse()?),
-                Side::Black,
-                DIAGONAL_THREE_PATTERNS,
-                EMPTY_DIAGONAL_BOARD,
-            ),
-            true
-        );
+        assert_eq!(board.count_threes("f10".parse()?, Side::Black), 1);
+        assert_eq!(board.count_threes("g9".parse()?, Side::Black), 1);
+        assert_eq!(board.count_threes("h8".parse()?, Side::Black), 1);
         Ok(())
     }
 
     #[test]
     fn incorrect_three() -> Result<()> {
         let board: Board = "h4h5h6h8".parse()?;
-        let board = board.top_bot();
 
-        assert_eq!(
-            board.has_pattern::<6, true>(
-                Pos::from_str("h8")?.transpose(),
-                Side::Black,
-                HORIZONTAL_THREE_PATTERNS,
-                EMPTY_NORMAL_BOARD,
-            ),
-            false
-        );
+        assert_eq!(board.count_threes("h8".parse()?, Side::Black), 0);
         Ok(())
     }
 
@@ -1191,6 +1041,16 @@ mod tests {
         assert_eq!(board.count_threes("h9".parse()?, Side::Black), 0);
         assert_eq!(board.count_threes("i10".parse()?, Side::Black), 0);
         assert_eq!(board.count_threes("k12".parse()?, Side::Black), 0);
+        Ok(())
+    }
+
+    #[test]
+    fn diag_three_no_overline() -> Result<()> {
+        let board: Board = "e5h8i9j10".parse()?;
+
+        assert_eq!(board.count_threes("h8".parse()?, Side::Black), 1);
+        assert_eq!(board.count_threes("i9".parse()?, Side::Black), 1);
+        assert_eq!(board.count_threes("j10".parse()?, Side::Black), 1);
         Ok(())
     }
 
