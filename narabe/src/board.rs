@@ -52,6 +52,13 @@ impl<const SIZE: usize> fmt::Debug for BitBoard<SIZE> {
     }
 }
 
+pub const fn set_bit(row: u32, idx: usize, val: bool) -> u32 {
+    let mask = 1 << idx;
+    let b = if val { mask } else { 0 };
+
+    (row & !mask) | b
+}
+
 // TODO check if passing row and col by u8 might be faster
 impl<const SIZE: usize> BitBoard<SIZE> {
     pub const fn new() -> Self {
@@ -85,15 +92,11 @@ impl<const SIZE: usize> BitBoard<SIZE> {
 
     pub fn set(&mut self, pos: Pos, val: bool) {
         debug_assert!(pos.col() < SIZE);
-        let mask = 1 << pos.col();
-        self.rows[pos.row()] = (self.rows[pos.row()] & !mask) | val.then_some(mask).unwrap_or(0);
+        self.rows[pos.row()] = set_bit(self.rows[pos.row()], pos.col(), val);
     }
 
     pub const fn set_move(mut self, pos: Pos, val: bool) -> Self {
-        let mask = 1 << pos.col();
-        let b = if val { mask } else { 0 };
-
-        self.rows[pos.row()] = (self.rows[pos.row()] & !mask) | b;
+        self.rows[pos.row()] = set_bit(self.rows[pos.row()], pos.col(), val);
         self
     }
 }
@@ -275,16 +278,13 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         self.count_fours_horizontal(pos, side)
     }
 
-    fn count_fours_horizontal(&self, pos: Pos, side: Side) -> u8 {
+    fn count_fours_impl(&self, pos: Pos, our_row: u32, their_row: u32) -> u8 {
         debug_assert!(SIZE == BOARD_SIZE || SIZE == DIAG_SIZE);
         let mask_len = 7;
 
         // detect four by counting missing piece for a five (i.e. win with no overline)
         let max = (pos.col()).min(SIZE - mask_len);
         let min = pos.col().saturating_sub(mask_len - 1);
-
-        let our_row = self.get_row(pos.row(), side);
-        let their_row = self.get_row(pos.row(), !side);
 
         let mut count = 0;
         let mut straight = false;
@@ -314,6 +314,23 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         }
         debug_assert!(!straight || count > 0);
         count
+    }
+
+    pub fn is_potential_four(&self, pos: Pos, side: Side) -> bool {
+        debug_assert!(SIZE == BOARD_SIZE || SIZE == DIAG_SIZE);
+
+        let our_row = self.get_row(pos.row(), side);
+        let their_row = self.get_row(pos.row(), !side);
+        //self.count_fours_impl(pos, our_row, their_row)
+        todo!()
+    }
+
+    fn count_fours_horizontal(&self, pos: Pos, side: Side) -> u8 {
+        debug_assert!(SIZE == BOARD_SIZE || SIZE == DIAG_SIZE);
+
+        let our_row = self.get_row(pos.row(), side);
+        let their_row = self.get_row(pos.row(), !side);
+        self.count_fours_impl(pos, our_row, their_row)
     }
 }
 
