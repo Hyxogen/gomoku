@@ -275,6 +275,14 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         self.count_pattern::<LEN, NO_OPPOSING>(pos, side, patterns, boundary) > 0
     }
 
+    pub fn has_three(&self, pos: Pos, side: Side) -> bool {
+        if SIZE == BOARD_SIZE {
+            self.has_three_horizontal(pos, side)
+        } else {
+            self.has_three_diagonal(pos, side)
+        }
+    }
+
     pub fn has_three_horizontal(&self, pos: Pos, side: Side) -> bool {
         //TODO detect threes by checking if one piece away from straight four (similar how fours
         //are detected)
@@ -297,7 +305,33 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
                 return true;
             }
         }
+        false
+    }
 
+    pub fn has_three_diagonal(&self, pos: Pos, side: Side) -> bool {
+        debug_assert!(SIZE == DIAG_SIZE);
+        let mask_len = 12;
+
+        let max = (pos.col()).min(SIZE - mask_len);
+        let min = pos.col().saturating_sub(mask_len - 1);
+
+        let our_row = self.get_row(pos.row(), side);
+        let their_row = self.get_row(pos.row(), !side);
+        let border_row = DIAGONAL_BOUNDARY.row(pos.row());
+
+        for shift in min..=max {
+            let four = 0b000101010100 << shift;
+            let four_mask = 0b010101010101 << shift;
+
+            let missing = (our_row & four_mask) ^ four;
+
+            if (their_row & four_mask) == 0
+                && (border_row & four_mask) == 0
+                && missing.count_ones() == 1
+            {
+                return true;
+            }
+        }
         false
     }
 
@@ -596,37 +630,16 @@ impl Board {
 
         let mut three_count = 0;
 
-        if self
-            .board0
-            .has_pattern::<6, true>(pos, side, HORIZONTAL_THREE_PATTERNS, NORMAL_BOUNDARY)
-        {
+        if self.board0.has_three(pos, side) {
             three_count += 1;
         }
-
-        if self.board1.has_pattern::<6, true>(
-            pos.transpose(),
-            side,
-            HORIZONTAL_THREE_PATTERNS,
-            NORMAL_BOUNDARY,
-        ) {
+        if self.board1.has_three(pos.transpose(), side) {
             three_count += 1;
         }
-
-        if self.board2.has_pattern::<12, true>(
-            Self::rot_right(pos),
-            side,
-            DIAGONAL_THREE_PATTERNS,
-            DIAGONAL_BOUNDARY,
-        ) {
+        if self.board2.has_three(Self::rot_right(pos), side) {
             three_count += 1;
         }
-
-        if self.board3.has_pattern::<12, true>(
-            Self::rot_left(pos),
-            side,
-            DIAGONAL_THREE_PATTERNS,
-            DIAGONAL_BOUNDARY,
-        ) {
+        if self.board3.has_three(Self::rot_left(pos), side) {
             three_count += 1;
         }
 
