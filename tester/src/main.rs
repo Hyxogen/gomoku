@@ -214,6 +214,7 @@ fn print_differences(resp1: &HashSet<Pos>, resp2: &HashSet<Pos>) {
     if resp2.is_empty() {
         writeln!(stdout, "NONE").unwrap();
     }
+    writeln!(stdout).unwrap();
 }
 
 fn test_single<'a, R1, W1, R2, W2>(
