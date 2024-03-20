@@ -8,6 +8,7 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use tools::Pos;
+use termcolor::{Color, StandardStream, WriteColor, ColorChoice, ColorSpec};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -180,6 +181,41 @@ fn pos_to_board(positions: &Vec<(Pos, Field)>) -> Board {
     board
 }
 
+fn print_differences(resp1: &HashSet<Pos>, resp2: &HashSet<Pos>) {
+    let mut stdout = StandardStream::stdout(ColorChoice::Auto);
+    writeln!(stdout, "BOT 1:").unwrap();
+    for pos in resp1 {
+        if !resp2.contains(pos) {
+            stdout.set_color(ColorSpec::new().set_fg(Some(Color::Red))).unwrap();
+        } else {
+            stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green))).unwrap();
+        }
+
+        writeln!(stdout, "{} row={} col={}", pos, pos.row(), pos.col()).unwrap();
+    }
+    stdout.set_color(&ColorSpec::new()).unwrap();
+    if resp1.is_empty() {
+        writeln!(stdout, "NONE").unwrap();
+    }
+
+    writeln!(stdout, "BOT 2:").unwrap();
+
+    for pos in resp1 {
+        if !resp2.contains(pos) {
+            stdout.set_color(ColorSpec::new().set_fg(Some(Color::Red))).unwrap();
+        } else {
+            stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green))).unwrap();
+        }
+
+        writeln!(stdout, "{} row={} col={}", pos, pos.row(), pos.col()).unwrap();
+    }
+
+    stdout.set_color(&ColorSpec::new()).unwrap();
+    if resp1.is_empty() {
+        writeln!(stdout, "NONE").unwrap();
+    }
+}
+
 fn test_single<'a, R1, W1, R2, W2>(
     positions: &Vec<(Pos, Field)>,
     bot1: &mut ManagerClient<'a, R1, W1>,
@@ -198,25 +234,17 @@ fn test_single<'a, R1, W1, R2, W2>(
         let reduced = reduce(positions, (&resp1, &resp2), bot1, bot2);
         let areduced = reduce_aggresive(&reduced, bot1, bot2);
 
-        println!("bot1:");
-        for pos in resp1.iter() {
-            println!("{} row={} col={}", pos, pos.row(), pos.col());
-        }
-        if resp1.is_empty() {
-            println!("NONE");
-        }
-
-        println!("bot2:");
-        for pos in resp2.iter() {
-            println!("{} row={} col={}", pos, pos.row(), pos.col());
-        }
-        if resp2.is_empty() {
-            println!("NONE");
-        }
+        print_differences(&resp1, &resp2);
 
         eprintln!("board: {}", board);
         eprintln!("reduced board: {}", pos_to_board(&reduced));
-        eprintln!("aggresively reduced board: {}", pos_to_board(&areduced));
+
+        eprintln!();
+        eprintln!("AGGRESSIVE REDUCTION:");
+        eprintln!("reduced board: {}", pos_to_board(&areduced));
+
+        let (resp1, resp2) = get_forbids(&areduced, bot1, bot2);
+        print_differences(&resp1, &resp2);
         std::process::exit(1);
     } else {
         println!("OK");

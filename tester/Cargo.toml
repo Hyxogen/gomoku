@@ -10,4 +10,5 @@ clap = { version = "4.5.3", features = ["derive"] }
 narabe = { version = "0.1.0", path = "../narabe" }
 protocol = { version = "0.1.0", path = "../protocol" }
 rand = "0.8.5"
+termcolor = "1.4.1"
 tools = { version = "0.1.0", path = "../tools" }
