@@ -1,4 +1,5 @@
 use clap::Parser;
+use narabe::board::{Board, Side, Square};
 use protocol::{BrainCommand, BrainCommandReader, Field, ManagerCommand};
 use rand::random;
 use std::borrow::Cow;
@@ -6,12 +7,13 @@ use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use tools::Pos;
-use narabe::board::{Board, Side, Square};
 
 #[derive(Parser, Debug)]
 struct Args {
     bot1: PathBuf,
     bot2: PathBuf,
+
+    board: Option<String>,
 }
 
 pub struct ManagerClient<'a, R, W>
@@ -63,6 +65,7 @@ where
     }
 }
 
+//e3d4f4i5j5a6c6f7b9c12b14g14
 fn test_board<'a, R1, W1, R2, W2>(
     pos: &Vec<(Pos, Field)>,
     bot1: &mut ManagerClient<'a, R1, W1>,
@@ -113,6 +116,41 @@ where
     }
 }
 
+fn test_single<'a, R1, W1, R2, W2>(
+    positions: &Vec<(Pos, Field)>,
+    bot1: &mut ManagerClient<'a, R1, W1>,
+    bot2: &mut ManagerClient<'a, R2, W2>,
+) where
+    R1: Iterator,
+    R1::Item: AsRef<str>,
+    W1: Write,
+    R2: Iterator,
+    R2::Item: AsRef<str>,
+    W2: Write,
+{
+    if !test_board(positions, bot1, bot2) {
+        let mut board = Board::new();
+        eprintln!("field:");
+
+        for (pos, field) in positions {
+            let side = if let Field::Mine = field {
+                Side::Black
+            } else {
+                Side::White
+            };
+            board.set(*pos, Square::Piece(side));
+
+            let field = if let Field::Mine = field { 1 } else { 2 };
+            eprintln!("{},{},{}", pos.col(), pos.row(), field);
+        }
+
+        eprintln!("board: {}", board);
+        std::process::exit(1);
+    } else {
+        println!("OK");
+    }
+}
+
 fn main() {
     let args = Args::parse();
 
@@ -147,35 +185,39 @@ fn main() {
     client1.send(&ManagerCommand::Info("rule".to_string(), "4".to_string()));
     client2.send(&ManagerCommand::Info("rule".to_string(), "4".to_string()));
 
-    loop {
+    if let Some(board) = args.board {
+        let board: Board = board.parse().unwrap();
+
         let mut positions: Vec<(Pos, Field)> = Vec::new();
 
-        let count = random::<u8>() % (15 * 15);
+        for row in 0..board.size() {
+            for col in 0..board.size() {
+                let pos = Pos::new(row, col);
 
-        for _ in 0..count {
-            //let b: bool = random();
-            //let field = if b { Field::Mine } else { Field::Theirs };
-
-            let pos = (random::<u8>() % 15, random::<u8>() % 15).into();
-            positions.push((pos, Field::Mine));
+                match board.at(pos) {
+                    Square::Piece(Side::Black) => positions.push((pos, Field::Mine)),
+                    Square::Piece(Side::White) => positions.push((pos, Field::Theirs)),
+                    _ => (),
+                };
+            }
         }
 
-        if !test_board(&positions, &mut client1, &mut client2) {
-            let mut board = Board::new();
-            eprintln!("field:");
+        test_single(&positions, &mut client1, &mut client2);
+    } else {
+        loop {
+            let mut positions: Vec<(Pos, Field)> = Vec::new();
 
-            for (pos, field) in &positions {
-                let side = if let Field::Mine = field { Side::Black } else { Side::White };
-                board.set(*pos, Square::Piece(side));
+            let count = random::<u8>() % (15 * 15);
 
-                let field = if let Field::Mine = field { 1 } else { 2 };
-                eprintln!("{},{},{}", pos.col(), pos.row(), field);
+            for _ in 0..count {
+                //let b: bool = random();
+                //let field = if b { Field::Mine } else { Field::Theirs };
+
+                let pos = (random::<u8>() % 15, random::<u8>() % 15).into();
+                positions.push((pos, Field::Mine));
             }
-            
-            eprintln!("board: {}", board);
-            std::process::exit(1);
-        } else {
-            println!("OK");
+
+            test_single(&positions, &mut client1, &mut client2);
         }
     }
 }
