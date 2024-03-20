@@ -289,18 +289,20 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         //TODO detect threes by checking if one piece away from straight four (similar how fours
         //are detected)
         debug_assert!(SIZE == BOARD_SIZE);
-        let mask_len = 8;
+        let mask_len = 6;
 
         let max = (pos.col()).min(SIZE - mask_len);
         let min = pos.col().saturating_sub(mask_len - 1);
 
         let our_row = self.get_row(pos.row(), side);
         let their_row = self.get_row(pos.row(), !side);
+        //println!("");
 
         for shift in min..=max {
-            let four = 0b00111100 << shift;
-            let four_mask = 0b01111110 << shift;
-            let overline_mask = 0b10000001 << shift;
+            //TODO might be better to shift our_row >> shift, instead of all others
+            let four = 0b011110 << shift;
+            let four_mask = 0b111111 << shift;
+            let overline_mask = 0b10000001u32.wrapping_shl((shift as u32).saturating_sub(1));
 
             let missing = (our_row & four_mask) ^ four;
 
@@ -316,7 +318,7 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
 
     pub fn has_three_diagonal(&self, pos: Pos, side: Side) -> bool {
         debug_assert!(SIZE == DIAG_SIZE);
-        let mask_len = 16;
+        let mask_len = 12;
 
         let max = (pos.col()).min(SIZE - mask_len);
         let min = pos.col().saturating_sub(mask_len - 1);
@@ -326,9 +328,9 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         let border_row = DIAGONAL_BOUNDARY.row(pos.row());
 
         for shift in min..=max {
-            let four = 0b0000010101010000 << shift;
-            let four_mask = 0b0001010101010100 << shift;
-            let overline_mask = 0b0100000000000001 << shift;
+            let four = 0b000101010100 << shift;
+            let four_mask = 0b010101010101 << shift;
+            let overline_mask = 0b0100000000000001u32.wrapping_shl((shift as u32).saturating_sub(1));
 
             let missing = (our_row & four_mask) ^ four;
 
@@ -364,6 +366,9 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
 
         let mut count = 0;
         let mut straight = false;
+        println!("");
+        println!("");
+        println!("{}", pos);
 
         for shift in min..=max {
             let win = 0b0111110 << shift;
@@ -372,6 +377,16 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
 
             let masked_row = our_row & win_mask;
             let missing = masked_row ^ win;
+
+            println!("their_row={:0>32b}", their_row);
+            println!("OUR_ROW  ={:0>32b}", our_row);
+            println!("four     ={:0>32b}", win);
+            println!("four mask={:0>32b}", win_mask);
+            println!("missing  ={:0>32b}", missing);
+            println!("");
+            println!("1) {}", (their_row & mask) == 0);
+            println!("4) {}", missing.count_ones() == 1);
+
 
             // TODO: Check if this code actually properly works, and does not falsely report fours
 
@@ -385,15 +400,16 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
                 count += 1;
 
                 //TODO might be faster by just checking all possible straight fours on masked_row
-                if (masked_row.wrapping_shr(masked_row.trailing_zeros()) ^ 0b01111) == 0 {
+                if masked_row.wrapping_shr(masked_row.trailing_zeros()) == 0b01111 {
                     straight = true;
                 }
             }
         }
 
-        if straight {
+        if straight && count > 1 {
             count -= 1
         }
+        debug_assert!(!straight || count > 0);
         count
     }
 
@@ -429,15 +445,16 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
                 count += 1;
 
                 //TODO might be faster by just checking all possible straight fours on masked_row
-                if (masked_row.wrapping_shr(masked_row.trailing_zeros()) ^ 0b0001010101) == 0 {
+                if masked_row.wrapping_shr(masked_row.trailing_zeros()) == 0b0001010101 {
                     straight = true;
                 }
             }
         }
 
-        if straight {
+        if straight && count > 1 {
             count -= 1
         }
+        debug_assert!(!straight || count > 0);
         count
     }
 }
@@ -1105,6 +1122,56 @@ mod tests {
         assert_eq!(board.count_threes("h8".parse()?, Side::Black), 0);
         assert_eq!(board.count_threes("j8".parse()?, Side::Black), 0);
 
+        Ok(())
+    }
+
+    #[test]
+    fn three_near_edge_horiz() -> Result<()> {
+        let board: Board = "b14c14d14".parse()?;
+
+        assert_eq!(board.count_threes("b14".parse()?, Side::Black), 1);
+        assert_eq!(board.count_threes("c14".parse()?, Side::Black), 1);
+        assert_eq!(board.count_threes("d14".parse()?, Side::Black), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn three_near_edge_diag() -> Result<()> {
+        let board: Board = "d12c13b14".parse()?;
+
+        assert_eq!(board.count_threes("d12".parse()?, Side::Black), 1);
+        assert_eq!(board.count_threes("c13".parse()?, Side::Black), 1);
+        assert_eq!(board.count_threes("b14".parse()?, Side::Black), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn four_near_edge_horiz() -> Result<()> {
+        let board: Board = "b8c8d8e8".parse()?;
+
+        assert_eq!(board.count_fours("b8".parse()?, Side::Black), 1);
+        assert_eq!(board.count_fours("c8".parse()?, Side::Black), 1);
+        assert_eq!(board.count_fours("d8".parse()?, Side::Black), 1);
+        assert_eq!(board.count_fours("e8".parse()?, Side::Black), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn four_near_edge_diag() -> Result<()> {
+        let board: Board = "f11e12d13c14".parse()?;
+
+        assert_eq!(board.count_fours("f11".parse()?, Side::Black), 1);
+        assert_eq!(board.count_fours("e12".parse()?, Side::Black), 1);
+        assert_eq!(board.count_fours("d13".parse()?, Side::Black), 1);
+        assert_eq!(board.count_fours("c14".parse()?, Side::Black), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn double_three_near_edge() -> Result<()> {
+        let board: Board = "f12e13b14c14d14".parse()?;
+
+        assert_eq!(board.is_double_three("d14".parse()?, Side::Black), true);
         Ok(())
     }
 
