@@ -193,7 +193,7 @@ fn print_differences(resp1: &HashSet<Pos>, resp2: &HashSet<Pos>) {
 
         writeln!(stdout, "{} row={} col={}", pos, pos.row(), pos.col()).unwrap();
     }
-    stdout.set_color(&ColorSpec::new()).unwrap();
+    stdout.set_color(ColorSpec::new().set_reset(true)).unwrap();
     if resp1.is_empty() {
         writeln!(stdout, "NONE").unwrap();
     }
@@ -210,7 +210,7 @@ fn print_differences(resp1: &HashSet<Pos>, resp2: &HashSet<Pos>) {
         writeln!(stdout, "{} row={} col={}", pos, pos.row(), pos.col()).unwrap();
     }
 
-    stdout.set_color(&ColorSpec::new()).unwrap();
+    stdout.set_color(ColorSpec::new().set_reset(true)).unwrap();
     if resp2.is_empty() {
         writeln!(stdout, "NONE").unwrap();
     }
