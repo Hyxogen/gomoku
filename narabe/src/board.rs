@@ -265,12 +265,6 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
                 && (our_row & overline_mask) == 0
                 && missing.count_ones() == 1
             {
-                //println!("our row  ={:0>32b}", our_row);
-                //println!("four     ={:0>32b}", four);
-                //println!("four mask={:0>32b}", four_mask);
-                //println!("missing  ={:0>32b}", missing);
-                //println!("overline ={:0>32b}", overline_mask);
-                //println!("border   ={:0>32b}", border_row);
                 return Some(Pos::new(pos.row(), missing.leading_zeros() as usize));
             }
         }
