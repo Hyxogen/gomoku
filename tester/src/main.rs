@@ -200,7 +200,7 @@ fn print_differences(resp1: &HashSet<Pos>, resp2: &HashSet<Pos>) {
 
     writeln!(stdout, "BOT 2:").unwrap();
 
-    for pos in resp1 {
+    for pos in resp2 {
         if !resp2.contains(pos) {
             stdout.set_color(ColorSpec::new().set_fg(Some(Color::Red))).unwrap();
         } else {
@@ -211,7 +211,7 @@ fn print_differences(resp1: &HashSet<Pos>, resp2: &HashSet<Pos>) {
     }
 
     stdout.set_color(&ColorSpec::new()).unwrap();
-    if resp1.is_empty() {
+    if resp2.is_empty() {
         writeln!(stdout, "NONE").unwrap();
     }
 }
@@ -230,7 +230,6 @@ fn test_single<'a, R1, W1, R2, W2>(
 {
     let (resp1, resp2) = get_forbids(positions, bot1, bot2);
     if resp1 != resp2 {
-        println!("{} {}", resp1.len(), resp2.len());
         print_differences(&resp1, &resp2);
 
         let board = pos_to_board(positions);
