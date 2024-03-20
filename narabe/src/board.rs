@@ -567,10 +567,11 @@ impl Board {
     //
     // See: https://www.renju.net/rifrules/ 9.3a
     pub fn is_renju_double_three(&self, pos: Pos, side: Side) -> bool {
-        let cnt = self.get_threes(pos, side)
+        let threes = self.get_threes(pos, side);
+        let cnt = threes
             .iter()
             .filter_map(|x| *x)
-            .filter(|pos| self.count_potential_fours(*pos, side) >= 2)
+            .filter(|pos| self.count_potential_fours(*pos, side) < 2)
             .count();
         cnt > 1
     }
@@ -1124,7 +1125,10 @@ mod tests {
     fn is_renju_double_three() -> Result<()> {
         let board: Board = "h8g9e11g11e12h12i13e14".parse()?;
 
-        assert_eq!(board.is_renju_double_three("e11".parse()?, Side::Black), false);
+        assert_eq!(
+            board.is_renju_double_three("e11".parse()?, Side::Black),
+            false
+        );
         Ok(())
     }
 
@@ -1148,6 +1152,14 @@ mod tests {
         let board: Board = "h8g9e11g11e12h12i13e14".parse()?;
 
         assert_eq!(board.count_potential_fours("f10".parse()?, Side::Black), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn is_renju_double_three2() -> Result<()> {
+        let board: Board = "h8g9e11e12e14".parse()?;
+
+        assert!(board.is_renju_double_three("e11".parse()?, Side::Black));
         Ok(())
     }
 
