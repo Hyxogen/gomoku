@@ -1,4 +1,6 @@
 mod board;
+mod table;
+
 use board::{Board, Side, Square};
 use protocol::{BrainCommand, Field, ManagerCommand, ManagerCommandReader};
 use std::borrow::Cow;
@@ -70,7 +72,7 @@ fn is_forbidden(pos: Pos, board: &mut Board) -> bool {
 
     let forbidden = board.is_overline(pos, Side::Black)
         || (!board.is_win(pos, Side::Black)
-            && (board.is_double_three(pos, Side::Black) || board.is_double_four(pos, Side::Black)));
+            && (board.is_renju_double_three(pos, Side::Black) || board.is_double_four(pos, Side::Black)));
     board.set(pos, Square::Empty);
     forbidden
 }

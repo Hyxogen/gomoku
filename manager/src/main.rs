@@ -179,7 +179,7 @@ async fn main() {
 
                     if board.is_overline(pos, Side::Black)
                         || (!board.is_win(pos, Side::Black)
-                            && (board.is_double_three(pos, Side::Black)
+                            && (board.is_renju_double_three(pos, Side::Black)
                                 || board.is_double_four(pos, Side::Black)))
                     {
                         draw_circle(x, y, 5., RED);

@@ -1,4 +1,6 @@
+use crate::table::*;
 use anyhow::{bail, Error};
+use std::collections::HashMap;
 use std::fmt;
 /// 15x15 Renju board
 use std::ops::Not;
@@ -237,7 +239,7 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
                 && (our_row & overline_mask) == 0
                 && missing.count_ones() == 1
             {
-                return Some(Pos::new(pos.row(), missing.leading_zeros() as usize));
+                return Some(Pos::new(pos.row(), missing.trailing_zeros() as usize));
             }
         }
         None
@@ -268,7 +270,7 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
                 && (our_row & overline_mask) == 0
                 && missing.count_ones() == 1
             {
-                return Some(Pos::new(pos.row(), missing.leading_zeros() as usize));
+                return Some(Pos::new(pos.row(), missing.trailing_zeros() as usize));
             }
         }
         None
@@ -316,13 +318,12 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         count
     }
 
-    pub fn is_potential_four(&self, pos: Pos, side: Side) -> bool {
+    pub fn count_potential_fours(&self, pos: Pos, side: Side) -> u8 {
         debug_assert!(SIZE == BOARD_SIZE || SIZE == DIAG_SIZE);
 
-        let our_row = self.get_row(pos.row(), side);
+        let our_row = set_bit(self.get_row(pos.row(), side), pos.col(), true);
         let their_row = self.get_row(pos.row(), !side);
-        //self.count_fours_impl(pos, our_row, their_row)
-        todo!()
+        self.count_fours_impl(pos, our_row, their_row)
     }
 
     fn count_fours_horizontal(&self, pos: Pos, side: Side) -> u8 {
@@ -424,12 +425,66 @@ impl Board {
         pos
     }
 
-    const fn rot_right(pos: Pos) -> Pos {
+    pub const fn rot_right(pos: Pos) -> Pos {
         Self::rot_left(pos).transpose()
     }
 
+    pub fn gen_table<F: Fn(Pos) -> Pos>(f: F) {
+        let mut transformed = HashMap::new();
+        let mut inverse = HashMap::new();
+
+        let mut max_row = 0;
+        let mut max_col = 0;
+
+        for row in 0..BOARD_SIZE {
+            for col in 0..BOARD_SIZE {
+                let pos = Pos::new(row, col);
+
+                let tpos = f(pos);
+
+                max_row = max_row.max(tpos.row());
+                max_col = max_col.max(tpos.col());
+
+                transformed.insert(pos, tpos);
+                inverse.insert(tpos, pos);
+            }
+        }
+        print!("const TRANSFORM_TABLE: &'static [&'static [Pos]] = &[");
+
+        for row in 0..BOARD_SIZE {
+            print!("&[");
+            for col in 0..BOARD_SIZE {
+                let pos = Pos::new(row, col);
+                if let Some(tpos) = transformed.get(&pos) {
+                    print!("Pos::new({}, {}),", tpos.row(), tpos.col());
+                } else {
+                    panic!("this should not happen");
+                }
+            }
+            println!("],");
+        }
+        println!("];");
+
+        println!("const INVERSE_TABLE: &'static [&'static [Pos]] = &[");
+        for row in 0..=max_row {
+            print!("&[");
+            for col in 0..=max_col {
+                let pos = Pos::new(row, col);
+                print!("Pos::new(");
+                if let Some(tpos) = inverse.get(&pos) {
+                    print!("{}, {}", tpos.row(), tpos.col());
+                } else {
+                    print!("1000,1000");
+                }
+                print!("),");
+            }
+            println!("],");
+        }
+        println!("];");
+    }
+
     //https://math.stackexchange.com/a/733222
-    const fn rot_left(pos: Pos) -> Pos {
+    pub const fn rot_left(pos: Pos) -> Pos {
         Pos::new(
             pos.row() + pos.col(),
             (BOARD_SIZE - 1) - pos.row() + pos.col(),
@@ -439,8 +494,8 @@ impl Board {
     pub fn set(&mut self, pos: Pos, val: Square) {
         self.board0.set(pos, val);
         self.board1.set(pos.transpose(), val);
-        self.board2.set(Self::diag_right(pos), val);
-        self.board3.set(Self::diag_left(pos), val);
+        self.board2.set(transform_right(pos), val);
+        self.board3.set(transform_left(pos), val);
     }
 
     pub fn is_oob(&self, pos: Pos) -> bool {
@@ -486,6 +541,40 @@ impl Board {
         self.count_threes(pos, side) >= 2
     }
 
+    pub fn get_threes(&self, pos: Pos, side: Side) -> [Option<Pos>; 4] {
+        [
+            self.board0.get_three(pos, side),
+            self.board1
+                .get_three(pos.transpose(), side)
+                .map(Pos::transpose),
+            self.board2
+                .get_three(transform_right(pos), side)
+                .map(untransform_right),
+            self.board3
+                .get_three(transform_left(pos), side)
+                .map(untransform_left),
+        ]
+    }
+
+    // Renju double threes are a bit special, it is only a double three if it guarantees a win, so
+    // take for example the following board:
+    // h8g9g11e12h12i13e14
+    //
+    // One might think that e11 is a forbidden move for black, as it would result in two threes,
+    // one where you create a straight four on e13 and one on f10. However, f10 would actually be a
+    // double four, which is a forbidden move, so in reality we only have created one possible for
+    // a straight four, and thus not a guaranteed win.
+    //
+    // See: https://www.renju.net/rifrules/ 9.3a
+    pub fn is_renju_double_three(&self, pos: Pos, side: Side) -> bool {
+        let cnt = self.get_threes(pos, side)
+            .iter()
+            .filter_map(|x| *x)
+            .filter(|pos| self.count_potential_fours(*pos, side) >= 2)
+            .count();
+        cnt > 1
+    }
+
     pub fn count_threes(&self, pos: Pos, side: Side) -> u8 {
         if self.board0.at(pos) != Square::Piece(side) {
             return 0;
@@ -514,16 +603,27 @@ impl Board {
     }
 
     pub fn count_fours(&self, pos: Pos, side: Side) -> u8 {
-        /*if self.board0.at(pos) != Square::Piece(side) {
-            return 0;
-        }*/
-
         let mut count = 0;
 
         count += self.board0.count_fours(pos, side);
         count += self.board1.count_fours(pos.transpose(), side);
         count += self.board2.count_fours(Self::diag_right(pos), side);
         count += self.board3.count_fours(Self::diag_left(pos), side);
+
+        count
+    }
+
+    pub fn count_potential_fours(&self, pos: Pos, side: Side) -> u8 {
+        let mut count = 0;
+
+        count += self.board0.count_potential_fours(pos, side);
+        count += self.board1.count_potential_fours(pos.transpose(), side);
+        count += self
+            .board2
+            .count_potential_fours(Self::diag_right(pos), side);
+        count += self
+            .board3
+            .count_potential_fours(Self::diag_left(pos), side);
 
         count
     }
@@ -633,6 +733,7 @@ impl fmt::Display for Board {
 #[cfg(test)]
 mod tests {
     use super::{BitBoard, Board, PieceBoard, Pos, Side, Square, BOARD_SIZE, DIAGONAL_BOUNDARY};
+    use crate::table::*;
     use anyhow::Result;
 
     #[test]
@@ -1003,6 +1104,50 @@ mod tests {
         assert_eq!(board.count_threes("h8".parse()?, Side::Black), 1);
         assert_eq!(board.count_threes("i9".parse()?, Side::Black), 1);
         assert_eq!(board.count_threes("j10".parse()?, Side::Black), 1);
+        Ok(())
+    }
+
+    #[test]
+    fn get_threes() -> Result<()> {
+        let board: Board = "h8g9e11g11e12h12i13e14".parse()?;
+
+        let [a, b, c, d] = board.get_threes("e11".parse()?, Side::Black);
+
+        assert_eq!(a, None);
+        assert_eq!(b, Some("e13".parse()?));
+        assert_eq!(c, None);
+        assert_eq!(d, Some("f10".parse()?));
+        Ok(())
+    }
+
+    #[test]
+    fn is_renju_double_three() -> Result<()> {
+        let board: Board = "h8g9e11g11e12h12i13e14".parse()?;
+
+        assert_eq!(board.is_renju_double_three("e11".parse()?, Side::Black), false);
+        Ok(())
+    }
+
+    #[test]
+    fn test_transforms() {
+        for row in 0..BOARD_SIZE {
+            for col in 0..BOARD_SIZE {
+                let pos = Pos::new(row, col);
+
+                assert_eq!(Board::diag_right(pos), transform_right(pos));
+                assert_eq!(Board::diag_left(pos), transform_left(pos));
+
+                assert_eq!(untransform_right(transform_right(pos)), pos);
+                assert_eq!(untransform_left(transform_left(pos)), pos);
+            }
+        }
+    }
+
+    #[test]
+    fn potential_fours() -> Result<()> {
+        let board: Board = "h8g9e11g11e12h12i13e14".parse()?;
+
+        assert_eq!(board.count_potential_fours("f10".parse()?, Side::Black), 2);
         Ok(())
     }
 
