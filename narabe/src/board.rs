@@ -525,16 +525,16 @@ impl Board {
 
     pub fn is_overline(&self, pos: Pos, side: Side) -> bool {
         self.board0.is_overline(pos, side)
-            || self.board1.is_overline(pos, side)
-            || self.board2.is_overline(pos, side)
-            || self.board3.is_overline(pos, side)
+            || self.board1.is_overline(pos.transpose(), side)
+            || self.board2.is_overline(transform_right(pos), side)
+            || self.board3.is_overline(transform_left(pos), side)
     }
 
     pub fn is_win(&self, pos: Pos, side: Side) -> bool {
         self.board0.is_win(pos, side)
-            || self.board1.is_win(pos, side)
-            || self.board2.is_win(pos, side)
-            || self.board3.is_win(pos, side)
+            || self.board1.is_win(pos.transpose(), side)
+            || self.board2.is_win(transform_right(pos), side)
+            || self.board3.is_win(transform_left(pos), side)
     }
 
     pub fn is_double_three(&self, pos: Pos, side: Side) -> bool {
@@ -1160,6 +1160,14 @@ mod tests {
         let board: Board = "h8g9e11e12e14".parse()?;
 
         assert!(board.is_renju_double_three("e11".parse()?, Side::Black));
+        Ok(())
+    }
+
+    #[test]
+    fn win_not_three() -> Result<()> {
+        let board: Board = "d4e4f4f5f6f7f8".parse()?;
+
+        assert_eq!(board.is_win("f4".parse()?, Side::Black), true);
         Ok(())
     }
 
