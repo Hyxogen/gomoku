@@ -328,9 +328,15 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         let border_row = DIAGONAL_BOUNDARY.row(pos.row());
 
         for shift in min..=max {
+            if (shift & 1) == 1 {
+                // diagonal boards are interleaved with zeroes, thus zeroes at each uneven index.
+                // These are fillers and should not be checked
+                continue;
+            }
+
             let four = 0b000101010100 << shift;
             let four_mask = 0b010101010101 << shift;
-            let overline_mask = 0b0100000000000001u32.wrapping_shl((shift as u32).saturating_sub(1));
+            let overline_mask = 0b1100000000000011u32.wrapping_shl((shift as u32).saturating_sub(1));
 
             let missing = (our_row & four_mask) ^ four;
 
@@ -425,6 +431,9 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         let mut straight = false;
 
         for shift in min..=max {
+            // We don't skip uneven positions here because we don't check for overlines
+            // Honestly thats the simple explanation, I'm not 100% sure
+
             let win = 0b00010101010100 << shift;
             let win_mask = 0b01010101010101 << shift;
             let mask = 0b0101010101 << shift;
@@ -1169,6 +1178,17 @@ mod tests {
         let board: Board = "f12e13b14c14d14".parse()?;
 
         assert_eq!(board.is_double_three("d14".parse()?, Side::Black), true);
+        Ok(())
+    }
+
+    #[test]
+    fn no_double_three_single_diag() -> Result<()> {
+        let board: Board = "f7h9i10k12".parse()?;
+
+        assert_eq!(board.count_threes("f7".parse()?, Side::Black), 0);
+        assert_eq!(board.count_threes("h9".parse()?, Side::Black), 0);
+        assert_eq!(board.count_threes("i10".parse()?, Side::Black), 0);
+        assert_eq!(board.count_threes("k12".parse()?, Side::Black), 0);
         Ok(())
     }
 
