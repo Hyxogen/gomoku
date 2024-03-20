@@ -175,7 +175,8 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         }
     }
 
-    pub fn has_three(&self, pos: Pos, side: Side) -> bool {
+    //Will return the position to place for straight for if it is a three
+    pub fn get_three(&self, pos: Pos, side: Side) -> Option<Pos> {
         if SIZE == BOARD_SIZE {
             self.has_three_horizontal(pos, side)
         } else {
@@ -206,10 +207,10 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         self.is_pattern(pos, side, 0b11111, 5)
     }
 
-    // NOTE: this function will falsely report a five as a three. This should probably not be a
+    // NOTE: this function will probably falsely report a five as a three. This should probably not be a
     // problem anywhere
-    pub fn has_three_horizontal(&self, pos: Pos, side: Side) -> bool {
-        //TODO detect threes by checking if one piece away from straight four (similar how fours
+    fn has_three_horizontal(&self, pos: Pos, side: Side) -> Option<Pos> {
+        //detect threes by checking if one piece away from straight four (similar how fours
         //are detected)
         debug_assert!(SIZE == BOARD_SIZE);
         let mask_len = 6;
@@ -233,13 +234,15 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
                 && (our_row & overline_mask) == 0
                 && missing.count_ones() == 1
             {
-                return true;
+                return Some(Pos::new(pos.row(), missing.leading_zeros() as usize));
             }
         }
-        false
+        None
     }
 
-    pub fn has_three_diagonal(&self, pos: Pos, side: Side) -> bool {
+    //if some, returns the position for the straight four
+    //NOTE, the the position will have to be untransformed
+    fn has_three_diagonal(&self, pos: Pos, side: Side) -> Option<Pos> {
         debug_assert!(SIZE == DIAG_SIZE);
         let mask_len = 12;
 
@@ -268,22 +271,18 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
                 //println!("missing  ={:0>32b}", missing);
                 //println!("overline ={:0>32b}", overline_mask);
                 //println!("border   ={:0>32b}", border_row);
-                return true;
+                return Some(Pos::new(pos.row(), missing.leading_zeros() as usize));
             }
         }
-        false
+        None
     }
 
     pub fn count_fours(&self, pos: Pos, side: Side) -> u8 {
-        if SIZE == BOARD_SIZE {
-            self.count_fours_horizontal(pos, side)
-        } else {
-            self.count_fours_diagonal(pos, side)
-        }
+        self.count_fours_horizontal(pos, side)
     }
 
-    pub fn count_fours_horizontal(&self, pos: Pos, side: Side) -> u8 {
-        debug_assert!(SIZE == BOARD_SIZE);
+    fn count_fours_horizontal(&self, pos: Pos, side: Side) -> u8 {
+        debug_assert!(SIZE == BOARD_SIZE || SIZE == DIAG_SIZE);
         let mask_len = 7;
 
         // detect four by counting missing piece for a five (i.e. win with no overline)
@@ -303,64 +302,8 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
 
             let masked_row = our_row & win_mask;
             let missing = masked_row ^ win;
-
-            //println!("their_row={:0>32b}", their_row);
-            //println!("OUR_ROW  ={:0>32b}", our_row);
-            //println!("four     ={:0>32b}", win);
-            //println!("four mask={:0>32b}", win_mask);
-            //println!("missing  ={:0>32b}", missing);
-            //println!("");
-            //println!("1) {}", (their_row & mask) == 0);
-            //println!("4) {}", missing.count_ones() == 1);
-
 
             // TODO: Check if this code actually properly works, and does not falsely report fours
-
-            //can never be a four if there is an opposing piece in the 5 piece window
-            if (their_row & mask) == 0 && missing.count_ones() == 1 {
-                //println!("shift={}", shift);
-                //println!("row={:0>15b}", our_row);
-                //println!("win={:0>15b}", win);
-                //println!("msk={:0>15b}", win_mask);
-                //println!("mis={:0>15b}", missing);
-                count += 1;
-
-                //TODO might be faster by just checking all possible straight fours on masked_row
-                if masked_row.wrapping_shr(masked_row.trailing_zeros()) == 0b01111 {
-                    straight = true;
-                }
-            }
-        }
-
-        if straight && count > 1 {
-            count -= 1
-        }
-        debug_assert!(!straight || count > 0);
-        count
-    }
-
-    pub fn count_fours_diagonal(&self, pos: Pos, side: Side) -> u8 {
-        debug_assert!(SIZE == DIAG_SIZE);
-        let mask_len = 7;
-
-        // detect four by counting missing piece for a five (i.e. win with no overline)
-        let max = (pos.col()).min(SIZE - mask_len);
-        let min = pos.col().saturating_sub(mask_len - 1);
-
-        let our_row = self.get_row(pos.row(), side);
-        let their_row = self.get_row(pos.row(), !side);
-
-        let mut count = 0;
-        let mut straight = false;
-
-        for shift in min..=max {
-            let win = 0b0111110 << shift;
-            let win_mask = 0b1111111 << shift;
-            let mask = 0b11111 << shift;
-
-            let masked_row = our_row & win_mask;
-            let missing = masked_row ^ win;
-
             //can never be a four if there is an opposing piece in the 5 piece window
             if (their_row & mask) == 0 && missing.count_ones() == 1 {
                 count += 1;
@@ -515,17 +458,17 @@ impl Board {
     }
 
     pub fn is_overline(&self, pos: Pos, side: Side) -> bool {
-        self.board0.is_overline(pos, side) || 
-        self.board1.is_overline(pos, side) || 
-        self.board2.is_overline(pos, side) || 
-        self.board3.is_overline(pos, side)
+        self.board0.is_overline(pos, side)
+            || self.board1.is_overline(pos, side)
+            || self.board2.is_overline(pos, side)
+            || self.board3.is_overline(pos, side)
     }
 
     pub fn is_win(&self, pos: Pos, side: Side) -> bool {
-        self.board0.is_win(pos, side) || 
-        self.board1.is_win(pos, side) || 
-        self.board2.is_win(pos, side) || 
-        self.board3.is_win(pos, side)
+        self.board0.is_win(pos, side)
+            || self.board1.is_win(pos, side)
+            || self.board2.is_win(pos, side)
+            || self.board3.is_win(pos, side)
     }
 
     pub fn is_double_three(&self, pos: Pos, side: Side) -> bool {
@@ -539,16 +482,16 @@ impl Board {
 
         let mut three_count = 0;
 
-        if self.board0.has_three(pos, side) {
+        if self.board0.get_three(pos, side) != None {
             three_count += 1;
         }
-        if self.board1.has_three(pos.transpose(), side) {
+        if self.board1.get_three(pos.transpose(), side) != None {
             three_count += 1;
         }
-        if self.board2.has_three(Self::diag_right(pos), side) {
+        if self.board2.get_three(Self::diag_right(pos), side) != None {
             three_count += 1;
         }
-        if self.board3.has_three(Self::diag_left(pos), side) {
+        if self.board3.get_three(Self::diag_left(pos), side) != None {
             three_count += 1;
         }
 
@@ -678,9 +621,7 @@ impl fmt::Display for Board {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        BitBoard, Board, PieceBoard, Pos, Side, Square, BOARD_SIZE, DIAGONAL_BOUNDARY,
-    };
+    use super::{BitBoard, Board, PieceBoard, Pos, Side, Square, BOARD_SIZE, DIAGONAL_BOUNDARY};
     use anyhow::Result;
 
     #[test]
