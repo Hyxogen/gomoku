@@ -346,6 +346,18 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         None
     }
 
+    //bbbb.
+    //bbb.b
+    //bb.bb
+    //b.bbb
+    //.bbbb
+    //
+    //bbbbb. win
+    //bbbb.b four
+    //bbb.bb three
+    //bb.bbb three
+    //b.bbbb four
+    //..bbbb straight
     fn get_fours_impl(&self, pos: Pos, our_row: u32, their_row: u32) -> Option<Four> {
         debug_assert!(SIZE == BOARD_SIZE || SIZE == DIAG_SIZE);
         let mask_len = 6;
@@ -360,15 +372,12 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
 
         for shift in min..=max {
             let win_mask = 0b11111 << shift;
+            let overline_mask = 0b1000001u32.wrapping_shl(shift as u32).wrapping_shr(1);
 
             let masked_row = our_row & win_mask;
             let missing = masked_row ^ win_mask;
 
-            if (their_row & win_mask) == 0 && missing.count_ones() == 1 {
-                if idx >= 2 {
-                    eprintln!("our_row={:0>32b}", our_row);
-                }
-
+            if (their_row & win_mask) == 0 && missing.count_ones() == 1 && (our_row & overline_mask) == 0 {
                 res[idx] = Some(Pos::new(pos.row(), missing.trailing_zeros() as usize));
                 idx += 1;
 
@@ -1320,6 +1329,21 @@ mod tests {
             board.is_renju_double_three("d6".parse()?, Side::Black),
             false
         );
+        Ok(())
+    }
+
+    #[test]
+    fn double_four2() -> Result<()> {
+        let board: Board = "d4e5a7b7d7b8d6c7".parse()?;
+
+        assert_eq!(board.count_fours("c7".parse()?, Side::Black), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn dont_panic() -> Result<()> {
+        let board: Board = "h8i8j8k8m8".parse()?;
+        assert_eq!(board.count_fours("i8".parse()?, Side::Black), 1);
         Ok(())
     }
 }
