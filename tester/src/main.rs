@@ -125,7 +125,7 @@ where
 
             let new = get_forbids(&attempt, bot1, bot2);
 
-            if *org.0 == new.0 && *org.1 == new.1 {
+            if new.0.difference(org.0).count() == 0 && new.1.difference(org.1).count() == 0 {
                 reduced = attempt;
                 continue 'outer;
             }
@@ -160,7 +160,7 @@ where
 
             let (resp1, resp2) = get_forbids(&attempt, bot1, bot2);
 
-            if resp1 != resp2 {
+            if resp1.difference(&resp2).count() != 0 {
                 reduced = attempt;
                 continue 'outer;
             }
@@ -241,7 +241,7 @@ fn test_single<'a, R1, W1, R2, W2>(
     W2: Write,
 {
     let (resp1, resp2) = get_forbids(positions, bot1, bot2);
-    if resp1 != resp2 {
+    if resp1.difference(&resp2).count() != 0 {
         print_differences(&resp1, &resp2);
 
         let board = pos_to_board(positions);
