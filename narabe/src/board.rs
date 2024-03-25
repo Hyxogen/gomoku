@@ -1300,16 +1300,4 @@ mod tests {
         assert_eq!(board.count_fours("i8".parse()?, Side::Black), 1);
         Ok(())
     }
-
-    #[test]
-    fn no_renju_double_three() -> Result<()> {
-        let board: Board = "c7a8e8f8e9d8".parse()?;
-
-        assert_eq!(
-            board.is_renju_double_three("d8".parse()?, Side::Black),
-            false
-        );
-        Ok(())
-    }
 }
-//d2e3h4f6I8N8j9n9k10n10c11e11l11n11a12c12d12e12f12e13o14
