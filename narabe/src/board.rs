@@ -365,6 +365,10 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
             let missing = masked_row ^ win_mask;
 
             if (their_row & win_mask) == 0 && missing.count_ones() == 1 {
+                if idx >= 2 {
+                    eprintln!("our_row={:0>32b}", our_row);
+                }
+
                 res[idx] = Some(Pos::new(pos.row(), missing.trailing_zeros() as usize));
                 idx += 1;
 
