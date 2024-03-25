@@ -61,10 +61,7 @@ pub struct FourIterator {
 
 impl FourIterator {
     pub fn new(inner: Four) -> Self {
-        Self {
-            inner,
-            idx: 0,
-        }
+        Self { inner, idx: 0 }
     }
 }
 
@@ -76,20 +73,14 @@ impl Iterator for FourIterator {
             Four::Normal(pos) if self.idx == 0 => {
                 self.idx += 1;
                 Some(pos)
-            },
+            }
             Four::Straight(a, b) if self.idx < 2 => {
-                let pos = if self.idx == 0 {
-                    a
-                } else {
-                    b
-                };
+                let pos = if self.idx == 0 { a } else { b };
 
                 self.idx += 1;
                 Some(pos)
             }
-            _ => {
-                None
-            }
+            _ => None,
         }
     }
 }
@@ -250,15 +241,6 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         }
     }
 
-    //Will return the position to place for straight for if it is a three
-    pub fn get_three(&self, pos: Pos, side: Side) -> Option<Pos> {
-        if SIZE == BOARD_SIZE {
-            self.has_three_horizontal(pos, side)
-        } else {
-            self.has_three_diagonal(pos, side)
-        }
-    }
-
     fn is_pattern(&self, pos: Pos, side: Side, pattern: u32, len: usize) -> bool {
         let max = (pos.col()).min(SIZE - len);
         let min = pos.col().saturating_sub(len - 1);
@@ -284,10 +266,10 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
 
     // NOTE: this function will probably falsely report a five as a three. This should probably not be a
     // problem anywhere
-    fn has_three_horizontal(&self, pos: Pos, side: Side) -> Option<Pos> {
+    pub fn get_three(&self, pos: Pos, side: Side) -> Option<Pos> {
         //detect threes by checking if one piece away from straight four (similar how fours
         //are detected)
-        debug_assert!(SIZE == BOARD_SIZE);
+        debug_assert!(SIZE == BOARD_SIZE || SIZE == DIAG_SIZE);
         let mask_len = 6;
 
         let max = (pos.col()).min(SIZE - mask_len);
@@ -295,6 +277,11 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
 
         let our_row = self.get_row(pos.row(), side);
         let their_row = self.get_row(pos.row(), !side);
+        let border_row = if SIZE == BOARD_SIZE {
+            NORMAL_BOUNDARY.row(pos.row())
+        } else {
+            DIAGONAL_BOUNDARY.row(pos.row())
+        };
         //println!("");
 
         for shift in min..=max {
@@ -308,37 +295,7 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
             if (their_row & four_mask) == 0
                 && (our_row & overline_mask) == 0
                 && missing.count_ones() == 1
-            {
-                return Some(Pos::new(pos.row(), missing.trailing_zeros() as usize));
-            }
-        }
-        None
-    }
-
-    //if some, returns the position for the straight four
-    //NOTE, the the position will have to be untransformed
-    fn has_three_diagonal(&self, pos: Pos, side: Side) -> Option<Pos> {
-        debug_assert!(SIZE == DIAG_SIZE);
-        let mask_len = 6;
-
-        let max = (pos.col()).min(SIZE - mask_len);
-        let min = pos.col().saturating_sub(mask_len - 1);
-
-        let our_row = self.get_row(pos.row(), side);
-        let their_row = self.get_row(pos.row(), !side);
-        let border_row = DIAGONAL_BOUNDARY.row(pos.row());
-
-        for shift in min..=max {
-            let four = 0b011110 << shift;
-            let four_mask = 0b111111 << shift;
-            let overline_mask = 0b10000001u32.wrapping_shl((shift as u32).saturating_sub(1));
-
-            let missing = (our_row & four_mask) ^ four;
-
-            if (their_row & four_mask) == 0
                 && (border_row & four_mask) == 0
-                && (our_row & overline_mask) == 0
-                && missing.count_ones() == 1
             {
                 return Some(Pos::new(pos.row(), missing.trailing_zeros() as usize));
             }
@@ -377,7 +334,10 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
             let masked_row = our_row & win_mask;
             let missing = masked_row ^ win_mask;
 
-            if (their_row & win_mask) == 0 && missing.count_ones() == 1 && (our_row & overline_mask) == 0 {
+            if (their_row & win_mask) == 0
+                && missing.count_ones() == 1
+                && (our_row & overline_mask) == 0
+            {
                 res[idx] = Some(Pos::new(pos.row(), missing.trailing_zeros() as usize));
                 idx += 1;
 
@@ -388,15 +348,9 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         }
 
         match res {
-            [Some(a), Some(b)] if straight => {
-                Some(Four::Straight(a, b))
-            },
-            [Some(a), Some(b)] if !straight => {
-                Some(Four::BrokenDouble(a, b))
-            },
-            [Some(pos), None] | [None, Some(pos)] => {
-                Some(Four::Normal(pos))
-            },
+            [Some(a), Some(b)] if straight => Some(Four::Straight(a, b)),
+            [Some(a), Some(b)] if !straight => Some(Four::BrokenDouble(a, b)),
+            [Some(pos), None] | [None, Some(pos)] => Some(Four::Normal(pos)),
             _ => None,
         }
     }
@@ -1346,4 +1300,16 @@ mod tests {
         assert_eq!(board.count_fours("i8".parse()?, Side::Black), 1);
         Ok(())
     }
+
+    #[test]
+    fn no_renju_double_three() -> Result<()> {
+        let board: Board = "c7a8e8f8e9d8".parse()?;
+
+        assert_eq!(
+            board.is_renju_double_three("d8".parse()?, Side::Black),
+            false
+        );
+        Ok(())
+    }
 }
+//d2e3h4f6I8N8j9n9k10n10c11e11l11n11a12c12d12e12f12e13o14
