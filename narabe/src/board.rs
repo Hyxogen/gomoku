@@ -33,6 +33,76 @@ pub enum Square {
     Piece(Side),
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum Four {
+    Normal(Pos),
+    Straight(Pos, Pos),
+    BrokenDouble(Pos, Pos),
+}
+
+impl Four {
+    pub fn map<F>(self, f: F) -> Self
+    where
+        F: Fn(Pos) -> Pos,
+    {
+        match self {
+            Self::Normal(pos) => Self::Normal(f(pos)),
+            Self::Straight(a, b) => Self::Straight(f(a), f(b)),
+            Self::BrokenDouble(a, b) => Self::BrokenDouble(f(a), f(b)),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct FourIterator {
+    inner: Four,
+    idx: u8,
+}
+
+impl FourIterator {
+    pub fn new(inner: Four) -> Self {
+        Self {
+            inner,
+            idx: 0,
+        }
+    }
+}
+
+impl Iterator for FourIterator {
+    type Item = Pos;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.inner {
+            Four::Normal(pos) if self.idx == 0 => {
+                self.idx += 1;
+                Some(pos)
+            },
+            Four::Straight(a, b) if self.idx < 2 => {
+                let pos = if self.idx == 0 {
+                    a
+                } else {
+                    b
+                };
+
+                self.idx += 1;
+                Some(pos)
+            }
+            _ => {
+                None
+            }
+        }
+    }
+}
+
+impl IntoIterator for Four {
+    type Item = <FourIterator as Iterator>::Item;
+    type IntoIter = FourIterator;
+
+    fn into_iter(self) -> Self::IntoIter {
+        FourIterator::new(self)
+    }
+}
+
 pub struct BitBoard<const SIZE: usize> {
     rows: [u32; SIZE],
 }
@@ -276,62 +346,60 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         None
     }
 
-    pub fn count_fours(&self, pos: Pos, side: Side) -> u8 {
-        self.count_fours_horizontal(pos, side)
-    }
-
-    fn count_fours_impl(&self, pos: Pos, our_row: u32, their_row: u32) -> u8 {
+    fn get_fours_impl(&self, pos: Pos, our_row: u32, their_row: u32) -> Option<Four> {
         debug_assert!(SIZE == BOARD_SIZE || SIZE == DIAG_SIZE);
-        let mask_len = 7;
+        let mask_len = 6;
 
-        // detect four by counting missing piece for a five (i.e. win with no overline)
+        // detect four by counting missing piece for a five,
         let max = (pos.col()).min(SIZE - mask_len);
         let min = pos.col().saturating_sub(mask_len - 1);
 
-        let mut count = 0;
+        let mut res = [None; 2];
+        let mut idx = 0;
         let mut straight = false;
 
         for shift in min..=max {
-            let win = 0b0111110 << shift;
-            let win_mask = 0b1111111 << shift;
-            let mask = 0b11111 << shift;
+            let win_mask = 0b11111 << shift;
 
             let masked_row = our_row & win_mask;
-            let missing = masked_row ^ win;
+            let missing = masked_row ^ win_mask;
 
-            // TODO: Check if this code actually properly works, and does not falsely report fours
-            //can never be a four if there is an opposing piece in the 5 piece window
-            if (their_row & mask) == 0 && missing.count_ones() == 1 {
-                count += 1;
+            if (their_row & win_mask) == 0 && missing.count_ones() == 1 {
+                res[idx] = Some(Pos::new(pos.row(), missing.trailing_zeros() as usize));
+                idx += 1;
 
-                //TODO might be faster by just checking all possible straight fours on masked_row
-                if masked_row.wrapping_shr(masked_row.trailing_zeros()) == 0b01111 {
+                if masked_row.wrapping_shr(masked_row.trailing_zeros()) == 0b1111 {
                     straight = true;
                 }
             }
         }
 
-        if straight && count > 1 {
-            count -= 1
+        match res {
+            [Some(a), Some(b)] if straight => {
+                Some(Four::Straight(a, b))
+            },
+            [Some(a), Some(b)] if !straight => {
+                Some(Four::BrokenDouble(a, b))
+            },
+            [Some(pos), None] | [None, Some(pos)] => {
+                Some(Four::Normal(pos))
+            },
+            _ => None,
         }
-        debug_assert!(!straight || count > 0);
-        count
     }
 
-    pub fn count_potential_fours(&self, pos: Pos, side: Side) -> u8 {
+    pub fn get_potential_fours(&self, pos: Pos, side: Side) -> Option<Four> {
         debug_assert!(SIZE == BOARD_SIZE || SIZE == DIAG_SIZE);
 
         let our_row = set_bit(self.get_row(pos.row(), side), pos.col(), true);
         let their_row = self.get_row(pos.row(), !side);
-        self.count_fours_impl(pos, our_row, their_row)
+        self.get_fours_impl(pos, our_row, their_row)
     }
 
-    fn count_fours_horizontal(&self, pos: Pos, side: Side) -> u8 {
-        debug_assert!(SIZE == BOARD_SIZE || SIZE == DIAG_SIZE);
-
+    pub fn get_fours(&self, pos: Pos, side: Side) -> Option<Four> {
         let our_row = self.get_row(pos.row(), side);
         let their_row = self.get_row(pos.row(), !side);
-        self.count_fours_impl(pos, our_row, their_row)
+        self.get_fours_impl(pos, our_row, their_row)
     }
 }
 
@@ -603,30 +671,56 @@ impl Board {
         self.count_fours(pos, side) >= 2
     }
 
+    pub fn get_fours(&self, pos: Pos, side: Side) -> [Option<Four>; 4] {
+        [
+            self.board0.get_fours(pos, side),
+            self.board1
+                .get_fours(pos.transpose(), side)
+                .map(|x| x.map(Pos::transpose)),
+            self.board2
+                .get_fours(transform_right(pos), side)
+                .map(|x| x.map(untransform_right)),
+            self.board3
+                .get_fours(transform_left(pos), side)
+                .map(|x| x.map(untransform_left)),
+        ]
+    }
+
     pub fn count_fours(&self, pos: Pos, side: Side) -> u8 {
-        let mut count = 0;
+        self.get_fours(pos, side)
+            .into_iter()
+            .filter_map(std::convert::identity)
+            .map(|x| match x {
+                Four::Normal(_) | Four::Straight(_, _) => 1,
+                Four::BrokenDouble(_, _) => 2,
+            })
+            .sum()
+    }
 
-        count += self.board0.count_fours(pos, side);
-        count += self.board1.count_fours(pos.transpose(), side);
-        count += self.board2.count_fours(Self::diag_right(pos), side);
-        count += self.board3.count_fours(Self::diag_left(pos), side);
-
-        count
+    pub fn get_potential_fours(&self, pos: Pos, side: Side) -> [Option<Four>; 4] {
+        [
+            self.board0.get_potential_fours(pos, side),
+            self.board1
+                .get_potential_fours(pos.transpose(), side)
+                .map(|x| x.map(Pos::transpose)),
+            self.board2
+                .get_potential_fours(transform_right(pos), side)
+                .map(|x| x.map(untransform_right)),
+            self.board3
+                .get_potential_fours(transform_left(pos), side)
+                .map(|x| x.map(untransform_left)),
+        ]
     }
 
     pub fn count_potential_fours(&self, pos: Pos, side: Side) -> u8 {
-        let mut count = 0;
-
-        count += self.board0.count_potential_fours(pos, side);
-        count += self.board1.count_potential_fours(pos.transpose(), side);
-        count += self
-            .board2
-            .count_potential_fours(Self::diag_right(pos), side);
-        count += self
-            .board3
-            .count_potential_fours(Self::diag_left(pos), side);
-
-        count
+        self.get_potential_fours(pos, side)
+            .into_iter()
+            .filter_map(std::convert::identity)
+            .map(|x| match x {
+                Four::Normal(_) | Four::Straight(_, _) => 1,
+                Four::BrokenDouble(_, _) => 2,
+            })
+            .sum()
     }
 
     pub const fn size(&self) -> usize {
@@ -736,6 +830,16 @@ mod tests {
     use super::{BitBoard, Board, PieceBoard, Pos, Side, Square, BOARD_SIZE, DIAGONAL_BOUNDARY};
     use crate::table::*;
     use anyhow::Result;
+    use std::collections::HashSet;
+
+    fn get_fours(board: &Board, pos: Pos) -> HashSet<Pos> {
+        board
+            .get_fours(pos, Side::Black)
+            .into_iter()
+            .filter_map(std::convert::identity)
+            .flatten()
+            .collect()
+    }
 
     #[test]
     fn empty_board() {
@@ -950,10 +1054,12 @@ mod tests {
     fn no_double_four() -> Result<()> {
         let board: Board = "g8h8i8j8".parse()?;
 
-        assert_eq!(board.count_fours("j8".parse()?, Side::Black), 1);
-        assert_eq!(board.count_fours("g8".parse()?, Side::Black), 1);
-        assert_eq!(board.count_fours("h8".parse()?, Side::Black), 1);
-        assert_eq!(board.count_fours("i8".parse()?, Side::Black), 1);
+        let fours: HashSet<Pos> = ["f8".parse()?, "k8".parse()?].into_iter().collect();
+
+        assert_eq!(get_fours(&board, "j8".parse()?), fours);
+        assert_eq!(get_fours(&board, "g8".parse()?), fours);
+        assert_eq!(get_fours(&board, "h8".parse()?), fours);
+        assert_eq!(get_fours(&board, "i8".parse()?), fours);
         Ok(())
     }
 
@@ -971,7 +1077,12 @@ mod tests {
     fn vertical_straight_four() -> Result<()> {
         let board: Board = "h8h9h10h11".parse()?;
 
-        assert_eq!(board.count_fours("h8".parse()?, Side::Black), 1);
+        let fours = ["h7".parse()?, "h12".parse()?].into_iter().collect();
+
+        assert_eq!(get_fours(&board, "h8".parse()?), fours);
+        assert_eq!(get_fours(&board, "h9".parse()?), fours);
+        assert_eq!(get_fours(&board, "h10".parse()?), fours);
+        assert_eq!(get_fours(&board, "h11".parse()?), fours);
         Ok(())
     }
 
@@ -979,15 +1090,10 @@ mod tests {
     fn win_no_four() -> Result<()> {
         let board: Board = "h8h9h10h11h12".parse()?;
 
-        assert_eq!(board.count_fours("h6".parse()?, Side::Black), 0);
-        assert_eq!(board.count_fours("h7".parse()?, Side::Black), 0);
-        assert_eq!(board.count_fours("h8".parse()?, Side::Black), 0);
-        assert_eq!(board.count_fours("h9".parse()?, Side::Black), 0);
-        assert_eq!(board.count_fours("h10".parse()?, Side::Black), 0);
-        assert_eq!(board.count_fours("h11".parse()?, Side::Black), 0);
-        assert_eq!(board.count_fours("h12".parse()?, Side::Black), 0);
-        assert_eq!(board.count_fours("h13".parse()?, Side::Black), 0);
-        assert_eq!(board.count_fours("h14".parse()?, Side::Black), 0);
+        for pos in board.get_fours("h6".parse()?, Side::Black) {
+            assert_eq!(pos, None);
+        }
+
         Ok(())
     }
 
@@ -995,10 +1101,13 @@ mod tests {
     fn diag_straight_four() -> Result<()> {
         let board: Board = "g7h8i9j10".parse()?;
 
-        assert_eq!(board.count_fours("g7".parse()?, Side::Black), 1);
-        assert_eq!(board.count_fours("h8".parse()?, Side::Black), 1);
-        assert_eq!(board.count_fours("i9".parse()?, Side::Black), 1);
-        assert_eq!(board.count_fours("j10".parse()?, Side::Black), 1);
+        let fours: HashSet<Pos> = ["f6".parse()?, "k11".parse()?].into_iter().collect();
+
+        assert_eq!(get_fours(&board, "g7".parse()?), fours);
+        assert_eq!(get_fours(&board, "h8".parse()?), fours);
+        assert_eq!(get_fours(&board, "i9".parse()?), fours);
+        assert_eq!(get_fours(&board, "j10".parse()?), fours);
+
         Ok(())
     }
 
@@ -1061,10 +1170,12 @@ mod tests {
     fn four_near_edge_horiz() -> Result<()> {
         let board: Board = "b8c8d8e8".parse()?;
 
-        assert_eq!(board.count_fours("b8".parse()?, Side::Black), 1);
-        assert_eq!(board.count_fours("c8".parse()?, Side::Black), 1);
-        assert_eq!(board.count_fours("d8".parse()?, Side::Black), 1);
-        assert_eq!(board.count_fours("e8".parse()?, Side::Black), 1);
+        let fours = ["a8".parse()?, "f8".parse()?].into_iter().collect();
+
+        assert_eq!(get_fours(&board, "b8".parse()?), fours);
+        assert_eq!(get_fours(&board, "c8".parse()?), fours);
+        assert_eq!(get_fours(&board, "d8".parse()?), fours);
+        assert_eq!(get_fours(&board, "e8".parse()?), fours);
         Ok(())
     }
 
@@ -1072,10 +1183,12 @@ mod tests {
     fn four_near_edge_diag() -> Result<()> {
         let board: Board = "f11e12d13c14".parse()?;
 
-        assert_eq!(board.count_fours("f11".parse()?, Side::Black), 1);
-        assert_eq!(board.count_fours("e12".parse()?, Side::Black), 1);
-        assert_eq!(board.count_fours("d13".parse()?, Side::Black), 1);
-        assert_eq!(board.count_fours("c14".parse()?, Side::Black), 1);
+        let fours = ["b15".parse()?, "g10".parse()?].into_iter().collect();
+
+        assert_eq!(get_fours(&board, "f11".parse()?), fours);
+        assert_eq!(get_fours(&board, "e12".parse()?), fours);
+        assert_eq!(get_fours(&board, "d13".parse()?), fours);
+        assert_eq!(get_fours(&board, "c14".parse()?), fours);
         Ok(())
     }
 
@@ -1192,6 +1305,17 @@ mod tests {
         assert_eq!(threes[0], Some("k2".parse()?));
         assert_eq!(threes[1], None);
         assert_eq!(threes[2], None);
+        Ok(())
+    }
+
+    #[test]
+    fn no_double_three2() -> Result<()> {
+        let board: Board = "d4e5a7b7d7b8d6".parse()?;
+
+        assert_eq!(
+            board.is_renju_double_three("d6".parse()?, Side::Black),
+            false
+        );
         Ok(())
     }
 }
