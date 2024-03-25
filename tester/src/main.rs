@@ -7,8 +7,8 @@ use std::collections::HashSet;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use termcolor::{Color, ColorChoice, ColorSpec, StandardStream, WriteColor};
 use tools::Pos;
-use termcolor::{Color, StandardStream, WriteColor, ColorChoice, ColorSpec};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -85,13 +85,16 @@ where
     bot2.send(&ManagerCommand::YXBoard(Cow::Borrowed(pos)));
     bot2.send(&ManagerCommand::YXShowForbid);
 
-    let resp1 = bot1.next().unwrap();
+    let resp1 = bot1.next();
     let resp2 = bot2.next().unwrap();
     match (resp1, resp2) {
-        (BrainCommand::Forbid(pos1), BrainCommand::Forbid(pos2)) => (
+        (Some(BrainCommand::Forbid(pos1)), BrainCommand::Forbid(pos2)) => (
             pos1.into_owned().into_iter().collect(),
             pos2.into_owned().into_iter().collect(),
         ),
+        (_, BrainCommand::Forbid(pos2)) => {
+            (Default::default(), pos2.into_owned().into_iter().collect())
+        }
         _ => panic!("invalid response"),
     }
 }
@@ -186,9 +189,13 @@ fn print_differences(resp1: &HashSet<Pos>, resp2: &HashSet<Pos>) {
     writeln!(stdout, "BOT 1:").unwrap();
     for pos in resp1 {
         if !resp2.contains(pos) {
-            stdout.set_color(ColorSpec::new().set_fg(Some(Color::Red))).unwrap();
+            stdout
+                .set_color(ColorSpec::new().set_fg(Some(Color::Red)))
+                .unwrap();
         } else {
-            stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green))).unwrap();
+            stdout
+                .set_color(ColorSpec::new().set_fg(Some(Color::Green)))
+                .unwrap();
         }
 
         writeln!(stdout, "{} row={} col={}", pos, pos.row(), pos.col()).unwrap();
@@ -202,9 +209,13 @@ fn print_differences(resp1: &HashSet<Pos>, resp2: &HashSet<Pos>) {
 
     for pos in resp2 {
         if !resp2.contains(pos) {
-            stdout.set_color(ColorSpec::new().set_fg(Some(Color::Red))).unwrap();
+            stdout
+                .set_color(ColorSpec::new().set_fg(Some(Color::Red)))
+                .unwrap();
         } else {
-            stdout.set_color(ColorSpec::new().set_fg(Some(Color::Green))).unwrap();
+            stdout
+                .set_color(ColorSpec::new().set_fg(Some(Color::Green)))
+                .unwrap();
         }
 
         writeln!(stdout, "{} row={} col={}", pos, pos.row(), pos.col()).unwrap();
