@@ -249,7 +249,7 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
     //NOTE, the the position will have to be untransformed
     fn has_three_diagonal(&self, pos: Pos, side: Side) -> Option<Pos> {
         debug_assert!(SIZE == DIAG_SIZE);
-        let mask_len = 12;
+        let mask_len = 6;
 
         let max = (pos.col()).min(SIZE - mask_len);
         let min = pos.col().saturating_sub(mask_len - 1);
@@ -1181,5 +1181,17 @@ mod tests {
 
         board.set(pos, Square::Empty);
         assert_eq!(board.at(pos), Square::Empty);
+    }
+
+    #[test]
+    fn no_double_three() -> Result<()> {
+        let board: Board = "l2m2e7d8b10j2".parse()?;
+
+        let threes = board.get_threes("j2".parse()?, Side::Black);
+        assert_eq!(threes[3], None);
+        assert_eq!(threes[0], Some("k2".parse()?));
+        assert_eq!(threes[1], None);
+        assert_eq!(threes[2], None);
+        Ok(())
     }
 }
