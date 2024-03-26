@@ -434,7 +434,7 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
     pub fn get_three(&self, pos: Pos, side: Side) -> Option<Three<Pos>> {
         let our_row = self.row_of(pos.row(), side);
         let their_row = self.row_of(pos.row(), side.opposite());
-        let border_row = 0;
+        let border_row = Self::NORMAL_BOUNDARY_BOARD.row(pos.row());
 
         match Self::get_three_impl(pos.col(), our_row, their_row, border_row) {
             Some(Three::Normal(col)) => Some(Three::Normal(Pos::new(pos.row(), col))),
@@ -557,14 +557,14 @@ impl Board {
     }
 
     pub const fn normal_boundary_board() -> BitBoard<RENJU_BOARD_SIZE> {
-        let board: BitBoard<RENJU_BOARD_SIZE> = BitBoard::filled();
+        let mut board: BitBoard<RENJU_BOARD_SIZE> = BitBoard::filled();
 
         let mut row = 0;
         while row < RENJU_BOARD_SIZEU8 {
             let mut col = 0;
             while col < RENJU_BOARD_SIZEU8 {
                 let pos = Pos::new(row, col);
-                board.set(Self::centre(pos), false);
+                board = board.set(Self::centre(pos), false);
                 col += 1;
             }
             row += 1;
