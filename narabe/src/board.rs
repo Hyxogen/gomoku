@@ -945,6 +945,39 @@ mod tests {
         test_three("D8g8h8i8L8", "k8", &[]);
         test_three("D8g8h8i8L8", "l8", &[]);
         
-        //TODO test with border
+        test_three("l8m8n8", "i8", &[]);
+        test_three("l8m8n8", "j8", &[]);
+        test_three("l8m8n8", "k8", &[]);
+        test_three("l8m8n8", "l8", &["k8"]);
+        test_three("l8m8n8", "m8", &["k8"]);
+        test_three("l8m8n8", "n8", &["k8"]);
+        test_three("l8m8n8", "o8", &[]);
+
+        test_three("k8l8m8", "h8", &[]);
+        test_three("k8l8m8", "i8", &[]);
+        test_three("k8l8m8", "j8", &[]);
+        test_three("k8l8m8", "k8", &["j8", "n8"]);
+        test_three("k8l8m8", "l8", &["j8", "n8"]);
+        test_three("k8l8m8", "m8", &["j8", "n8"]);
+        test_three("k8l8m8", "n8", &[]);
+        test_three("k8l8m8", "o8", &[]);
+
+        test_three("b8c8d8", "a8", &[]);
+        test_three("b8c8d8", "b8", &["e8"]);
+        test_three("b8c8d8", "c8", &["e8"]);
+        test_three("b8c8d8", "d8", &["e8"]);
+        test_three("b8c8d8", "e8", &[]);
+        test_three("b8c8d8", "f8", &[]);
+        test_three("b8c8d8", "g8", &[]);
+
+        test_three("c8d8e8", "a8", &[]);
+        test_three("c8d8e8", "b8", &[]);
+        test_three("c8d8e8", "c8", &["b8", "f8"]);
+        test_three("c8d8e8", "d8", &["b8", "f8"]);
+        test_three("c8d8e8", "e8", &["b8", "f8"]);
+        test_three("c8d8e8", "f8", &[]);
+        test_three("c8d8e8", "g8", &[]);
+        test_three("c8d8e8", "h8", &[]);
+        //TODO vertical three tests
     }
 }
