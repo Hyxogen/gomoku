@@ -94,6 +94,7 @@ impl IntoIterator for Four {
     }
 }
 
+#[derive(Copy, Clone)]
 pub struct BitBoard<const SIZE: usize> {
     rows: [u32; SIZE],
 }
@@ -1353,6 +1354,17 @@ mod tests {
         assert_eq!(
             board.is_renju_double_three("d11".parse()?, Side::Black),
             false
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn double_three() -> Result<()> {
+        let board: Board = "f10g10h10f12h12g13h13i13g11".parse()?;
+
+        assert_eq!(
+            board.is_renju_double_three("g11".parse()?, Side::Black),
+            true
         );
         Ok(())
     }
