@@ -248,7 +248,7 @@ fn test_single<'a, R1, W1, R2, W2>(
         eprintln!("board: {}", board);
 
         let reduced = reduce(positions, (&resp1, &resp2), bot1, bot2);
-        let areduced = reduce_aggresive(&reduced, bot1, bot2);
+        let areduced = reduce_aggresive(positions, bot1, bot2);
         eprintln!("reduced board: {}", pos_to_board(&reduced));
 
         eprintln!();
