@@ -346,6 +346,14 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
                 && missing.count_ones() == 1
                 && (our_row & overline_mask) == 0
             {
+                if missing.trailing_zeros() >= 15 {
+                    println!("shift={} min={} max={}", shift, min, max);
+                    println!("our row ={:0>32b}", our_row);
+                    println!("win mask={:0>32b}", win_mask);
+                    println!("masked  ={:0>32b}", masked_row);
+                    println!("missing ={:0>32b}", missing);
+                    println!("overline={:0>32b}", overline_mask);
+                }
                 res[idx] = Some(Pos::new(pos.row(), missing.trailing_zeros() as usize));
                 idx += 1;
 
