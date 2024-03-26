@@ -620,6 +620,14 @@ impl Board {
         let cnt = threes
             .iter()
             .filter_map(|x| *x)
+            .filter(|pos| {
+                self.get_potential_fours(*pos, side)
+                    .iter()
+                    .any(|x| match x {
+                        Some(Four::Straight(_, _)) => true,
+                        _ => false,
+                    })
+            })
             .filter(|pos| self.count_potential_fours(*pos, side) < 2)
             .count();
         cnt > 1
@@ -1313,6 +1321,17 @@ mod tests {
         let board: Board = "h11k11i12h13j13k13h14k14h15".parse()?;
 
         assert_eq!(board.count_fours("h11".parse()?, Side::Black), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn no_double_three3() -> Result<()> {
+        let board: Board = "g8f11g11c12b13d11".parse()?;
+
+        assert_eq!(
+            board.is_renju_double_three("d11".parse()?, Side::Black),
+            false
+        );
         Ok(())
     }
 
