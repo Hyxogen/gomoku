@@ -322,6 +322,11 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         // detect four by counting missing piece for a five,
         let max = (pos.col()).min(SIZE - mask_len);
         let min = pos.col().saturating_sub(mask_len - 1);
+        let border_row = if SIZE == BOARD_SIZE {
+            NORMAL_BOUNDARY.row(pos.row())
+        } else {
+            DIAGONAL_BOUNDARY.row(pos.row())
+        };
 
         let mut res = [None; 2];
         let mut idx = 0;
@@ -345,14 +350,15 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
             if (their_row & win_mask) == 0
                 && missing.count_ones() == 1
                 && (our_row & overline_mask) == 0
+                && (win_mask & border_row) == 0
             {
                 if missing.trailing_zeros() >= 15 {
-                    println!("shift={} min={} max={}", shift, min, max);
-                    println!("our row ={:0>32b}", our_row);
-                    println!("win mask={:0>32b}", win_mask);
-                    println!("masked  ={:0>32b}", masked_row);
-                    println!("missing ={:0>32b}", missing);
-                    println!("overline={:0>32b}", overline_mask);
+                    eprintln!("shift={} min={} max={}", shift, min, max);
+                    eprintln!("our row ={:0>32b}", our_row);
+                    eprintln!("win mask={:0>32b}", win_mask);
+                    eprintln!("masked  ={:0>32b}", masked_row);
+                    eprintln!("missing ={:0>32b}", missing);
+                    eprintln!("overline={:0>32b}", overline_mask);
                 }
                 res[idx] = Some(Pos::new(pos.row(), missing.trailing_zeros() as usize));
                 idx += 1;
