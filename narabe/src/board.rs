@@ -815,7 +815,7 @@ mod tests {
     }
 
     #[test]
-    fn straight_three() {
+    fn horizontal_three() {
         test_three("g8h8i8", "d8", &[]);
         test_three("g8h8i8", "e8", &[]);
         test_three("g8h8i8", "f8", &[]);
@@ -978,6 +978,193 @@ mod tests {
         test_three("c8d8e8", "f8", &[]);
         test_three("c8d8e8", "g8", &[]);
         test_three("c8d8e8", "h8", &[]);
-        //TODO vertical three tests
+    }
+
+    #[test]
+    fn vertical_three() {
+        test_three("h7h8h9", "h12", &[]);
+        test_three("h7h8h9", "h11", &[]);
+        test_three("h7h8h9", "h10", &[]);
+        test_three("h7h8h9", "h9", &["h10", "h6"]);
+        test_three("h7h8h9", "h8", &["h10", "h6"]);
+        test_three("h7h8h9", "h7", &["h10", "h6"]);
+        test_three("h7h8h9", "h6", &[]);
+        test_three("h7h8h9", "h5", &[]);
+        test_three("h7h8h9", "h4", &[]);
+
+        test_three("h7h8h9h10", "h13", &[]);
+        test_three("h7h8h9h10", "h12", &[]);
+        test_three("h7h8h9h10", "h11", &[]);
+        test_three("h7h8h9h10", "h10", &[]);
+        test_three("h7h8h9h10", "h9", &[]);
+        test_three("h7h8h9h10", "h8", &[]);
+        test_three("h7h8h9h10", "h7", &[]);
+        test_three("h7h8h9h10", "h6", &[]);
+        test_three("h7h8h9h10", "h5", &[]);
+        test_three("h7h8h9h10", "h4", &[]);
+        test_three("h7h8h9h10", "h3", &[]);
+
+        test_three("h6h7h8h9", "h13", &[]);
+        test_three("h6h7h8h9", "h12", &[]);
+        test_three("h6h7h8h9", "h11", &[]);
+        test_three("h6h7h8h9", "h10", &[]);
+        test_three("h6h7h8h9", "h9", &[]);
+        test_three("h6h7h8h9", "h8", &[]);
+        test_three("h6h7h8h9", "h7", &[]);
+        test_three("h6h7h8h9", "h6", &[]);
+        test_three("h6h7h8h9", "h5", &[]);
+        test_three("h6h7h8h9", "h4", &[]);
+        test_three("h6h7h8h9", "h3", &[]);
+
+        test_three("h5h7h8h9", "h13", &[]);
+        test_three("h5h7h8h9", "h12", &[]);
+        test_three("h5h7h8h9", "h11", &[]);
+        test_three("h5h7h8h9", "h10", &[]);
+        test_three("h5h7h8h9", "h9", &[]);
+        test_three("h5h7h8h9", "h8", &[]);
+        test_three("h5h7h8h9", "h7", &[]);
+        test_three("h5h7h8h9", "h6", &[]);
+        test_three("h5h7h8h9", "h5", &[]);
+        test_three("h5h7h8h9", "h4", &[]);
+        test_three("h5h7h8h9", "h3", &[]);
+        test_three("h5h7h8h9", "h2", &[]);
+
+        test_three("h7h8h9h11", "h14", &[]);
+        test_three("h7h8h9h11", "h13", &[]);
+        test_three("h7h8h9h11", "h12", &[]);
+        test_three("h7h8h9h11", "h11", &[]);
+        test_three("h7h8h9h11", "h10", &[]);
+        test_three("h7h8h9h11", "h9", &[]);
+        test_three("h7h8h9h11", "h8", &[]);
+        test_three("h7h8h9h11", "h7", &[]);
+        test_three("h7h8h9h11", "h6", &[]);
+        test_three("h7h8h9h11", "h5", &[]);
+        test_three("h7h8h9h11", "h4", &[]);
+        test_three("h7h8h9h11", "h3", &[]);
+
+        test_three("H5h7h8h9", "h13", &[]);
+        test_three("H5h7h8h9", "h12", &[]);
+        test_three("H5h7h8h9", "h11", &[]);
+        test_three("H5h7h8h9", "h10", &[]);
+        test_three("H5h7h8h9", "h9", &["h10"]);
+        test_three("H5h7h8h9", "h8", &["h10"]);
+        test_three("H5h7h8h9", "h7", &["h10"]);
+        test_three("H5h7h8h9", "h6", &[]);
+        test_three("H5h7h8h9", "h5", &[]);
+        test_three("H5h7h8h9", "h4", &[]);
+        test_three("H5h7h8h9", "h3", &[]);
+        test_three("H5h7h8h9", "h2", &[]);
+
+        test_three("h7h8h9H11", "h14", &[]);
+        test_three("h7h8h9H11", "h13", &[]);
+        test_three("h7h8h9H11", "h12", &[]);
+        test_three("h7h8h9H11", "h11", &[]);
+        test_three("h7h8h9H11", "h10", &[]);
+        test_three("h7h8h9H11", "h9", &["h6"]);
+        test_three("h7h8h9H11", "h8", &["h6"]);
+        test_three("h7h8h9H11", "h7", &["h6"]);
+        test_three("h7h8h9H11", "h6", &[]);
+        test_three("h7h8h9H11", "h5", &[]);
+        test_three("h7h8h9H11", "h4", &[]);
+        test_three("h7h8h9H11", "h3", &[]);
+
+        test_three("h4h7h8h9", "h13", &[]);
+        test_three("h4h7h8h9", "h12", &[]);
+        test_three("h4h7h8h9", "h11", &[]);
+        test_three("h4h7h8h9", "h10", &[]);
+        test_three("h4h7h8h9", "h9", &["h10"]);
+        test_three("h4h7h8h9", "h8", &["h10"]);
+        test_three("h4h7h8h9", "h7", &["h10"]);
+        test_three("h4h7h8h9", "h6", &[]);
+        test_three("h4h7h8h9", "h5", &[]);
+        test_three("h4h7h8h9", "h4", &[]);
+        test_three("h4h7h8h9", "h3", &[]);
+        test_three("h4h7h8h9", "h2", &[]);
+
+        test_three("h7h8h9h12", "h14", &[]);
+        test_three("h7h8h9h12", "h13", &[]);
+        test_three("h7h8h9h12", "h12", &[]);
+        test_three("h7h8h9h12", "h11", &[]);
+        test_three("h7h8h9h12", "h10", &[]);
+        test_three("h7h8h9h12", "h9", &["h6"]);
+        test_three("h7h8h9h12", "h8", &["h6"]);
+        test_three("h7h8h9h12", "h7", &["h6"]);
+        test_three("h7h8h9h12", "h6", &[]);
+        test_three("h7h8h9h12", "h5", &[]);
+        test_three("h7h8h9h12", "h4", &[]);
+        test_three("h7h8h9h12", "h3", &[]);
+
+        test_three("H4h7h8h9", "h13", &[]);
+        test_three("H4h7h8h9", "h12", &[]);
+        test_three("H4h7h8h9", "h11", &[]);
+        test_three("H4h7h8h9", "h10", &[]);
+        test_three("H4h7h8h9", "h9", &["h6", "h10"]);
+        test_three("H4h7h8h9", "h8", &["h6", "h10"]);
+        test_three("H4h7h8h9", "h7", &["h6", "h10"]);
+        test_three("H4h7h8h9", "h6", &[]);
+        test_three("H4h7h8h9", "h5", &[]);
+        test_three("H4h7h8h9", "h4", &[]);
+        test_three("H4h7h8h9", "h3", &[]);
+        test_three("H4h7h8h9", "h2", &[]);
+
+        test_three("h7h8h9H12", "h14", &[]);
+        test_three("h7h8h9H12", "h13", &[]);
+        test_three("h7h8h9H12", "h12", &[]);
+        test_three("h7h8h9H12", "h11", &[]);
+        test_three("h7h8h9H12", "h10", &[]);
+        test_three("h7h8h9H12", "h9", &["h6", "h10"]);
+        test_three("h7h8h9H12", "h8", &["h6", "h10"]);
+        test_three("h7h8h9H12", "h7", &["h6", "h10"]);
+        test_three("h7h8h9H12", "h6", &[]);
+        test_three("h7h8h9H12", "h5", &[]);
+        test_three("h7h8h9H12", "h4", &[]);
+        test_three("h7h8h9H12", "h3", &[]);
+
+        test_three("H4h7h8h9H12", "h14", &[]);
+        test_three("H4h7h8h9H12", "h13", &[]);
+        test_three("H4h7h8h9H12", "h12", &[]);
+        test_three("H4h7h8h9H12", "h11", &[]);
+        test_three("H4h7h8h9H12", "h10", &[]);
+        test_three("H4h7h8h9H12", "h9", &["h6", "h10"]);
+        test_three("H4h7h8h9H12", "h8", &["h6", "h10"]);
+        test_three("H4h7h8h9H12", "h7", &["h6", "h10"]);
+        test_three("H4h7h8h9H12", "h6", &[]);
+        test_three("H4h7h8h9H12", "h5", &[]);
+        test_three("H4h7h8h9H12", "h4", &[]);
+        test_three("H4h7h8h9H12", "h3", &[]);
+
+        test_three("h12h13h14", "h15", &[]);
+        test_three("h12h13h14", "h14", &["h11"]);
+        test_three("h12h13h14", "h13", &["h11"]);
+        test_three("h12h13h14", "h12", &["h11"]);
+        test_three("h12h13h14", "h11", &[]);
+        test_three("h12h13h14", "h10", &[]);
+        test_three("h12h13h14", "h9", &[]);
+
+        test_three("h11h12h13", "h15", &[]);
+        test_three("h11h12h13", "h14", &[]);
+        test_three("h11h12h13", "h13", &["h14", "h10"]);
+        test_three("h11h12h13", "h12", &["h14", "h10"]);
+        test_three("h11h12h13", "h11", &["h14", "h10"]);
+        test_three("h11h12h13", "h10", &[]);
+        test_three("h11h12h13", "h9", &[]);
+        test_three("h11h12h13", "h8", &[]);
+
+        test_three("h2h3h4", "h1", &[]);
+        test_three("h2h3h4", "h2", &["h5"]);
+        test_three("h2h3h4", "h3", &["h5"]);
+        test_three("h2h3h4", "h4", &["h5"]);
+        test_three("h2h3h4", "h5", &[]);
+        test_three("h2h3h4", "h6", &[]);
+        test_three("h2h3h4", "h7", &[]);
+
+        test_three("h3h4h5", "h1", &[]);
+        test_three("h3h4h5", "h2", &[]);
+        test_three("h3h4h5", "h3", &["h2", "h6"]);
+        test_three("h3h4h5", "h4", &["h2", "h6"]);
+        test_three("h3h4h5", "h5", &["h2", "h6"]);
+        test_three("h3h4h5", "h6", &[]);
+        test_three("h3h4h5", "h7", &[]);
+        test_three("h3h4h5", "h8", &[]);
     }
 }
