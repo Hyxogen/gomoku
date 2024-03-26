@@ -322,7 +322,7 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
     // ,,,x.bb.b.x
     //
     // For each pattern, there are exactly three places for black stones to be placed
-    fn get_three_impl(idx: u8, our_row: u64, their_row: u64, border_row: u64) -> Option<Three<u8>> {
+    const fn get_three_impl(idx: u8, our_row: u64, their_row: u64, border_row: u64) -> Option<Three<u8>> {
         const MASK: u64 = 0b11111111111;
 
         debug_assert!(idx >= 11);
@@ -431,7 +431,7 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         None
     }
 
-    pub fn get_three(&self, pos: Pos, side: Side) -> Option<Three<Pos>> {
+    pub const fn get_three(&self, pos: Pos, side: Side) -> Option<Three<Pos>> {
         let our_row = self.row_of(pos.row(), side);
         let their_row = self.row_of(pos.row(), side.opposite());
         let border_row = Self::NORMAL_BOUNDARY_BOARD.row(pos.row());
