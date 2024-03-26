@@ -3,7 +3,7 @@ use narabe::board::{Board, Side, Square};
 use protocol::{BrainCommand, BrainCommandReader, Field, ManagerCommand};
 use rand::random;
 use std::borrow::Cow;
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -71,7 +71,7 @@ fn get_forbids<'a, R1, W1, R2, W2>(
     pos: &Vec<(Pos, Field)>,
     bot1: &mut ManagerClient<'a, R1, W1>,
     bot2: &mut ManagerClient<'a, R2, W2>,
-) -> (HashSet<Pos>, HashSet<Pos>)
+) -> (BTreeSet<Pos>, BTreeSet<Pos>)
 where
     R1: Iterator,
     R1::Item: AsRef<str>,
@@ -101,7 +101,7 @@ where
 
 fn reduce<'a, R1, W1, R2, W2>(
     pos: &Vec<(Pos, Field)>,
-    org: (&HashSet<Pos>, &HashSet<Pos>),
+    org: (&BTreeSet<Pos>, &BTreeSet<Pos>),
     bot1: &mut ManagerClient<'a, R1, W1>,
     bot2: &mut ManagerClient<'a, R2, W2>,
 ) -> Vec<(Pos, Field)>
@@ -184,7 +184,7 @@ fn pos_to_board(positions: &Vec<(Pos, Field)>) -> Board {
     board
 }
 
-fn print_differences(resp1: &HashSet<Pos>, resp2: &HashSet<Pos>) {
+fn print_differences(resp1: &BTreeSet<Pos>, resp2: &BTreeSet<Pos>) {
     let mut stdout = StandardStream::stdout(ColorChoice::Always);
     writeln!(stdout, "BOT 1:").unwrap();
     for pos in resp1 {
