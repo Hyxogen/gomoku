@@ -2,18 +2,18 @@ use std::fmt;
 use std::str;
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub struct Pos(usize, usize);
+pub struct Pos(u8, u8);
 
 impl Pos {
-    pub const fn new(row: usize, col: usize) -> Self {
+    pub const fn new(row: u8, col: u8) -> Self {
         Self { 0: row, 1: col }
     }
 
-    pub const fn row(&self) -> usize {
+    pub const fn row(&self) -> u8 {
         self.0
     }
 
-    pub const fn col(&self) -> usize {
+    pub const fn col(&self) -> u8 {
         self.1
     }
 
@@ -22,11 +22,12 @@ impl Pos {
     }
 }
 
-impl<T> From<(T, T)> for Pos
+impl<T, U> From<(T, U)> for Pos
 where
-    T: Into<usize>,
+    T: Into<u8>,
+    U: Into<u8>,
 {
-    fn from(value: (T, T)) -> Self {
+    fn from(value: (T, U)) -> Self {
         Self::new(value.0.into(), value.1.into())
     }
 }
@@ -34,12 +35,7 @@ where
 impl fmt::Display for Pos {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         debug_assert!(self.row() < 26);
-        write!(
-            f,
-            "{}{}",
-            (self.col() + ('a' as usize)) as u8 as char,
-            self.row() + 1
-        )
+        write!(f, "{}{}", (self.col() + 'a' as u8) as char, self.row() + 1)
     }
 }
 
@@ -79,15 +75,15 @@ impl str::FromStr for Pos {
             return Err(ParsePosError::NotAscii);
         }
 
-        let col = ch.to_ascii_lowercase() as usize - 'a' as usize;
+        let col = ch.to_ascii_lowercase() as u8 - 'a' as u8;
 
         let mut got_digit = false;
-        let mut row: usize = 0;
+        let mut row: u8 = 0;
 
         while let Some(digit) = iter.next().and_then(|x| x.to_digit(10)) {
             row = row.checked_mul(10).ok_or(ParsePosError::TooLarge)?;
             row = row
-                .checked_add(digit as usize)
+                .checked_add(digit as u8)
                 .ok_or(ParsePosError::TooLarge)?;
 
             got_digit = true;

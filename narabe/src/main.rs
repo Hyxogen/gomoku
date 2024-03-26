@@ -1,7 +1,6 @@
 mod board;
-mod table;
 
-use board::{Board, Side, Square};
+use board::{Board, Side};
 use protocol::{BrainCommand, Field, ManagerCommand, ManagerCommandReader};
 use std::borrow::Cow;
 use std::io;
@@ -64,7 +63,7 @@ where
 }
 
 fn is_forbidden(pos: Pos, board: &mut Board) -> bool {
-    if board.at(pos) != Square::Empty {
+    /*if board.at(pos) != Square::Empty {
         return false;
     }
 
@@ -74,7 +73,8 @@ fn is_forbidden(pos: Pos, board: &mut Board) -> bool {
         || (!board.is_win(pos, Side::Black)
             && (board.is_renju_double_three(pos, Side::Black) || board.is_double_four(pos, Side::Black)));
     board.set(pos, Square::Empty);
-    forbidden
+    forbidden*/
+    false
 }
 
 pub fn main() {
@@ -102,7 +102,7 @@ pub fn main() {
                         Field::Theirs => Side::White,
                     };
 
-                    board.set(*pos, Square::Piece(side));
+                    board.set(*pos, Some(side));
                 }
             }
             ManagerCommand::YXShowForbid if initialized => {

@@ -1,7 +1,7 @@
 use clap::Parser;
 use macroquad::prelude::*;
 
-use narabe::board::{Board, Side, Square};
+use narabe::board::{Board, Side};
 use protocol::{BrainCommand, BrainCommandReader, Field, ManagerCommand};
 use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
@@ -76,7 +76,7 @@ fn read_positions(board: &Board, side: Side) -> Vec<(Pos, Field)> {
     for row in 0..15 {
         for col in 0..15 {
             let pos = Pos::new(row, col);
-            if let Square::Piece(s) = board.at(pos) {
+            if let Some(s) = board.at(pos) {
                 let field = if s == side {
                     Field::Mine
                 } else {
@@ -122,7 +122,7 @@ async fn main() {
     loop {
         clear_background(YELLOW);
 
-        let size = board.size() as u8;
+        let size = board.size();
         let square_width = screen_width() / size as f32;
         let square_height = screen_height() / size as f32;
         let width = screen_width() - square_width;
@@ -142,8 +142,8 @@ async fn main() {
             let squarex = ((pos.0 - xoff) / square_width).round();
             let squarey = ((pos.1 - yoff) / square_height).round();
 
-            let row = (size as usize - 1) - squarey as usize;
-            let col = squarex as usize;
+            let row = (size as u8 - 1) - squarey as u8;
+            let col = squarex as u8;
             (row, col).into()
         };
 
@@ -168,14 +168,14 @@ async fn main() {
                 let pos = (row, col).into();
                 let (x, y) = to_screen_coords(pos);
 
-                if let Square::Piece(side) = board.at(pos) {
+                if let Some(side) = board.at(pos) {
                     let color = if side == Side::Black { BLACK } else { WHITE };
 
                     let r = square_width.min(square_height) / 2.;
 
                     draw_circle(x, y, r, color);
                 } else {
-                    board.set(pos, Square::Piece(Side::Black));
+                    /*board.set(pos, Square::Piece(Side::Black));
 
                     if board.is_overline(pos, Side::Black)
                         || (!board.is_win(pos, Side::Black)
@@ -189,10 +189,10 @@ async fn main() {
                         draw_circle(x, y, 5., GOLD);
                     }
 
-                    board.set(pos, Square::Empty);
+                    board.set(pos, Square::Empty);*/
                 }
 
-                if board.count_threes(pos, Side::Black) > 0 {
+                /*if board.count_threes(pos, Side::Black) > 0 {
                     draw_circle(x, y, 5., GREEN);
                 }
 
@@ -202,7 +202,7 @@ async fn main() {
 
                 if board.is_overline(pos, Side::Black) {
                     draw_circle(x, y, 5., DARKPURPLE);
-                }
+                }*/
             }
         }
 
@@ -228,7 +228,7 @@ async fn main() {
             } else {
                 Side::Black
             };
-            board.set(square, Square::Piece(side));
+            board = board.set(square, Some(side));
 
             client.send(&ManagerCommand::YXBoard(Cow::Owned(read_positions(
                 &board,
@@ -236,7 +236,7 @@ async fn main() {
             ))));
         }
         if is_mouse_button_down(MouseButton::Middle) {
-            board.set(square, Square::Empty);
+            board = board.set(square, None);
             client.send(&ManagerCommand::YXBoard(Cow::Owned(read_positions(
                 &board,
                 Side::Black,
@@ -259,6 +259,14 @@ async fn main() {
             } else {
                 panic!("expected forbidden positions");
             }
+        }
+
+        if is_key_down(KeyCode::D) {
+            eprintln!("{:?}", board);
+        }
+
+        if is_key_down(KeyCode::Escape) || is_key_down(KeyCode::Q) {
+            break;
         }
 
         next_frame().await

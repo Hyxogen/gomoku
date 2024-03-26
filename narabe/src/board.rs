@@ -1,108 +1,18 @@
-use crate::table::*;
 use anyhow::{bail, Error};
-use std::collections::HashMap;
 use std::fmt;
-/// 15x15 Renju board
 use std::ops::Not;
-use std::str;
+use std::str::FromStr;
 use tools::Pos;
 
-const BOARD_SIZE: usize = 15;
-const DIAG_SIZE: usize = (BOARD_SIZE * 2) - 1;
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Side {
-    Black,
-    White,
-}
-
-impl Not for Side {
-    type Output = Side;
-
-    fn not(self) -> Self::Output {
-        match self {
-            Side::Black => Side::White,
-            Side::White => Side::Black,
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Square {
-    Empty,
-    Piece(Side),
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub enum Four {
-    Normal(Pos),
-    Straight(Pos, Pos),
-    BrokenDouble(Pos, Pos),
-}
-
-impl Four {
-    pub fn map<F>(self, f: F) -> Self
-    where
-        F: Fn(Pos) -> Pos,
-    {
-        match self {
-            Self::Normal(pos) => Self::Normal(f(pos)),
-            Self::Straight(a, b) => Self::Straight(f(a), f(b)),
-            Self::BrokenDouble(a, b) => Self::BrokenDouble(f(a), f(b)),
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub struct FourIterator {
-    inner: Four,
-    idx: u8,
-}
-
-impl FourIterator {
-    pub fn new(inner: Four) -> Self {
-        Self { inner, idx: 0 }
-    }
-}
-
-impl Iterator for FourIterator {
-    type Item = Pos;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        match self.inner {
-            Four::Normal(pos) if self.idx == 0 => {
-                self.idx += 1;
-                Some(pos)
-            }
-            Four::Straight(a, b) if self.idx < 2 => {
-                let pos = if self.idx == 0 { a } else { b };
-
-                self.idx += 1;
-                Some(pos)
-            }
-            _ => None,
-        }
-    }
-}
-
-impl IntoIterator for Four {
-    type Item = <FourIterator as Iterator>::Item;
-    type IntoIter = FourIterator;
-
-    fn into_iter(self) -> Self::IntoIter {
-        FourIterator::new(self)
-    }
-}
-
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct BitBoard<const SIZE: usize> {
-    rows: [u32; SIZE],
+    rows: [u64; SIZE],
 }
 
 impl<const SIZE: usize> fmt::Debug for BitBoard<SIZE> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for row in 0..SIZE {
-            for col in 0..SIZE {
+        for row in 0..(SIZE as u8) {
+            for col in 0..64 {
                 if self.at((row, col).into()) {
                     write!(f, "1")?;
                 } else {
@@ -116,23 +26,30 @@ impl<const SIZE: usize> fmt::Debug for BitBoard<SIZE> {
     }
 }
 
-pub const fn set_bit(row: u32, idx: usize, val: bool) -> u32 {
+pub const fn get_bit(string: u64, idx: u8) -> bool {
+    debug_assert!(idx < 64);
+    (string & (1 << idx)) != 0
+}
+
+pub const fn set_bit(string: u64, idx: u8, val: bool) -> u64 {
+    debug_assert!(idx < 64);
     let mask = 1 << idx;
     let b = if val { mask } else { 0 };
 
-    (row & !mask) | b
+    (string & !mask) | b
 }
 
-// TODO check if passing row and col by u8 might be faster
 impl<const SIZE: usize> BitBoard<SIZE> {
     pub const fn new() -> Self {
-        Self { rows: [0; SIZE] }
+        Self::from_row(0)
+    }
+
+    pub const fn from_row(row: u64) -> Self {
+        Self { rows: [row; SIZE] }
     }
 
     pub const fn filled() -> Self {
-        Self {
-            rows: [u32::MAX; SIZE],
-        }
+        Self::from_row(u64::MAX)
     }
 
     pub const fn not(mut self) -> Self {
@@ -145,26 +62,132 @@ impl<const SIZE: usize> BitBoard<SIZE> {
         self
     }
 
-    pub const fn row(&self, row: usize) -> u32 {
-        self.rows[row]
+    pub const fn row(&self, row: u8) -> u64 {
+        self.rows[row as usize]
     }
 
     pub const fn at(&self, pos: Pos) -> bool {
-        debug_assert!(pos.col() < SIZE);
-        (self.rows[pos.row()] & (1 << pos.col())) != 0
+        debug_assert!((pos.col() as usize) < 64);
+        get_bit(self.row(pos.row()), pos.col())
     }
 
-    pub fn set(&mut self, pos: Pos, val: bool) {
-        debug_assert!(pos.col() < SIZE);
-        self.rows[pos.row()] = set_bit(self.rows[pos.row()], pos.col(), val);
-    }
-
-    pub const fn set_move(mut self, pos: Pos, val: bool) -> Self {
-        self.rows[pos.row()] = set_bit(self.rows[pos.row()], pos.col(), val);
+    pub const fn set(mut self, pos: Pos, val: bool) -> Self {
+        debug_assert!((pos.col() as usize) < 64);
+        self.rows[pos.row() as usize] = set_bit(self.rows[pos.row() as usize], pos.col(), val);
         self
     }
 }
 
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum Side {
+    Black,
+    White,
+}
+
+impl Not for Side {
+    type Output = Side;
+
+    fn not(self) -> Self::Output {
+        self.opposite()
+    }
+}
+
+impl Side {
+    pub const fn opposite(self) -> Self {
+        match self {
+            Self::White => Self::Black,
+            Self::Black => Self::White,
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, Ord, PartialOrd)]
+pub enum Three<T> {
+    Straight(T, T),
+    Normal(T),
+}
+
+impl<T> PartialEq for Three<T>
+where
+    T: PartialEq<T>,
+{
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Normal(a), Self::Normal(b)) => a == b,
+            (Self::Straight(a1, a2), Self::Straight(b1, b2)) => {
+                (a1 == b1 && a2 == b2) || (a1 == b2 && a2 == b1)
+            }
+            _ => false,
+        }
+    }
+}
+
+impl<T> Eq for Three<T> where T: PartialEq<T> {}
+
+impl Three<u8> {
+    pub const fn add(self, v: u8) -> Self {
+        match self {
+            Self::Straight(a, b) => Self::Straight(a + v, b + v),
+            Self::Normal(a) => Self::Normal(a + v),
+        }
+    }
+}
+
+impl<T> Three<T> {
+    pub fn map<F>(self, f: F) -> Self
+    where
+        F: Fn(T) -> T,
+    {
+        match self {
+            Self::Normal(a) => Self::Normal(f(a)),
+            Self::Straight(a, b) => Self::Straight(f(a), f(b)),
+        }
+    }
+}
+
+pub struct ThreeIter<T> {
+    inner: Three<T>,
+    idx: u8,
+}
+
+impl<T: Copy> ThreeIter<T> {
+    pub const fn new(inner: Three<T>) -> Self {
+        Self { inner, idx: 0 }
+    }
+}
+
+impl<T: Copy> Iterator for ThreeIter<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.inner {
+            Three::Normal(a) if self.idx == 0 => {
+                self.idx += 1;
+                Some(a)
+            }
+            Three::Straight(a, _) if self.idx == 0 => {
+                self.idx += 1;
+                Some(a)
+            }
+            Three::Straight(_, b) if self.idx == 1 => {
+                self.idx += 1;
+                Some(b)
+            }
+            _ => None,
+        }
+    }
+}
+
+impl<T: Copy> IntoIterator for Three<T> {
+    type Item = <ThreeIter<T> as Iterator>::Item;
+    type IntoIter = ThreeIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        ThreeIter::new(self)
+    }
+}
+
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct PieceBoard<const SIZE: usize> {
     pieces: BitBoard<SIZE>,
     black: BitBoard<SIZE>,
@@ -175,21 +198,21 @@ impl<const SIZE: usize> fmt::Debug for PieceBoard<SIZE> {
         write!(f, "    ")?;
         for col in 0..SIZE {
             if col < 10 {
-                write!(f, "{}", (col as u8 + '0' as u8) as char)?;
+                write!(f, "{}", (col as u8 + b'0') as char)?;
             } else {
-                write!(f, "{}", ((col - 10) as u8 + 'a' as u8) as char)?;
+                write!(f, "{}", ((col - 10) as u8 + b'a') as char)?;
             }
             write!(f, " ")?;
         }
         writeln!(f)?;
 
-        for row in 0..SIZE {
+        for row in 0..Self::SIZEU8 {
             write!(f, "{:0>2}) ", row)?;
-            for col in 0..SIZE {
+            for col in 0..64 {
                 match self.at(Pos::new(row, col)) {
-                    Square::Empty => write!(f, ".")?,
-                    Square::Piece(Side::Black) => write!(f, "b")?,
-                    Square::Piece(Side::White) => write!(f, "w")?,
+                    None => write!(f, ".")?,
+                    Some(Side::Black) => write!(f, "b")?,
+                    Some(Side::White) => write!(f, "w")?,
                 }
                 write!(f, " ")?;
             }
@@ -199,577 +222,250 @@ impl<const SIZE: usize> fmt::Debug for PieceBoard<SIZE> {
     }
 }
 
-const NORMAL_BOUNDARY: &'static BitBoard<BOARD_SIZE> = &Board::normal_boundary_board();
-const DIAGONAL_BOUNDARY: &'static BitBoard<DIAG_SIZE> = &Board::diag_boundary_board();
-
 impl<const SIZE: usize> PieceBoard<SIZE> {
-    pub fn new() -> Self {
+    pub const SIZEU8: u8 = SIZE as u8;
+
+    const NORMAL_BOUNDARY_BOARD: BitBoard<RENJU_BOARD_SIZE> = Board::normal_boundary_board();
+
+    pub const fn new() -> Self {
         Self {
             pieces: BitBoard::new(),
             black: BitBoard::new(),
         }
     }
 
-    pub fn at(&self, pos: Pos) -> Square {
+    pub const fn at(&self, pos: Pos) -> Option<Side> {
         let has_piece = self.pieces.at(pos);
         let is_black = self.black.at(pos);
 
         debug_assert!(!(is_black && !has_piece));
         match (has_piece, is_black) {
-            (true, true) => Square::Piece(Side::Black),
-            (true, false) => Square::Piece(Side::White),
-            _ => Square::Empty,
+            (true, true) => Some(Side::Black),
+            (true, false) => Some(Side::White),
+            _ => None,
         }
     }
 
-    pub fn set(&mut self, pos: Pos, val: Square) {
-        self.pieces.set(pos, val != Square::Empty);
-        self.black.set(pos, val == Square::Piece(Side::Black));
+    const fn is_black(v: Option<Side>) -> bool {
+        matches!(v, Some(Side::Black))
     }
 
-    pub fn pieces(&self) -> &BitBoard<SIZE> {
-        &self.pieces
+    pub const fn set(mut self, pos: Pos, val: Option<Side>) -> Self {
+        self.pieces = self.pieces.set(pos, val.is_some());
+        self.black = self.black.set(pos, Self::is_black(val));
+        self
     }
 
-    pub fn black(&self) -> &BitBoard<SIZE> {
-        &self.black
-    }
-
-    fn get_row(&self, row: usize, side: Side) -> u32 {
+    const fn row_of(&self, row: u8, side: Side) -> u64 {
         match side {
             Side::Black => self.black.row(row),
             Side::White => self.pieces.row(row) ^ self.black.row(row),
         }
     }
 
-    fn is_pattern_impl(idx: usize, string: u32, pattern: u32, len: usize) -> bool {
-        let max = idx.min(SIZE - len);
-        let min = idx.saturating_sub(len - 1);
+    // All three patterns:
+    // b = black
+    // . = no piece (must NOT be border)
+    // x = no black (may be a border)
+    // , = anything (may be border)
+    //
+    // Definition:
+    // A row with three stones to which you, without at the same time a five in a row is
+    // made, can add one more stone to attain a straight four.
+    //
+    // A straight four must look like this (at least for black in renju rules):
+    // x.bbbb.x
+    //
+    // So a three misses one of these black stones:
+    //
+    // x..bbb.x
+    // x.b.bb.x
+    // x.bb.b.x
+    // x.bbb..x
+    //
+    // mask
+    //      V
+    // x..bbb.x,,,
+    // ,,,x.b.bb.x
+    // ,,,x.bbb..x
+    // x.bb.b.x,,,
+    // 11111111111
+    //
+    // 18 patterns in total:
+    //
+    // Straight:
+    //      v
+    // x..bbb..x,,
+    // ,x..bbb..x,
+    // ,,x..bbb..x
+    //      v
+    // ,,x..bbb..x
+    // ,x..bbb..x,
+    // x..bbb..x,,
+    //
+    // Normal:
+    //      V
+    // x..bbb.x,,,
+    // ,x..bbb.x,,
+    // ,,x..bbb.x,
+    //      V
+    // ,,,x.b.bb.x
+    // ,x.b.bb.x,,
+    // x.b.bb.x,,,
+    //      V
+    // ,,,x.bbb..x
+    // ,,x.bbb..x,
+    // ,x.bbb..x,,
+    //      V
+    // x.bb.b.x,,,
+    // ,,x.bb.b.x,
+    // ,,,x.bb.b.x
+    //
+    // For each pattern, there are exactly three places for black stones to be placed
+    fn get_three_impl(idx: u8, our_row: u64, their_row: u64, border_row: u64) -> Option<Three<u8>> {
+        const MASK: u64 = 0b11111111111;
 
-        let our_row = string;
-        for shift in min..=max {
-            let shifted = pattern << shift;
+        debug_assert!(idx >= 11);
+        let offset = idx - 5;
+        let our_row = ((our_row >> offset) & MASK) as u16;
+        let their_row = ((their_row >> offset) & MASK) as u16;
+        let border_row = ((border_row >> offset) & MASK) as u16;
 
-            if (our_row & shifted) == shifted {
-                return true;
-            }
-        }
-        false
-    }
+        const THREE_PATTERNS: &[u16] = &[
+            0b00011100000,
+            0b00001110000,
+            0b00000111000,
+            0b00000111000,
+            0b00001110000,
+            0b00011100000,
+            0b00011100000,
+            0b00001110000,
+            0b00000111000,
+            0b00000101101,
+            0b00010110100,
+            0b00101101000,
+            0b00000111000,
+            0b00001110000,
+            0b00011100000,
+            0b00110100000,
+            0b00001101000,
+            0b00000110100,
+        ];
 
-    fn is_pattern(&self, pos: Pos, side: Side, pattern: u32, len: usize) -> bool {
-        Self::is_pattern_impl(pos.col(), self.get_row(pos.row(), side), pattern, len)
-    }
+        const EMPTY_PATTERNS: &[u16] = &[
+            0b01100011000,
+            0b00110001100,
+            0b00011000110,
+            0b00011000110,
+            0b00110001100,
+            0b01100011000,
+            0b01100010000,
+            0b00110001000,
+            0b00011000100,
+            0b00001010010,
+            0b00101001000,
+            0b01010010000,
+            0b00001000110,
+            0b00010001100,
+            0b00100011000,
+            0b01001010000,
+            0b00010010100,
+            0b00001001010,
+        ];
 
-    pub fn is_overline(&self, pos: Pos, side: Side) -> bool {
-        self.is_pattern(pos, side, 0b111111, 6)
-    }
+        const NO_OURS_PATTERNS: &[u16] = &[
+            0b10000000100,
+            0b01000000010,
+            0b00100000001,
+            0b00100000001,
+            0b01000000010,
+            0b10000000100,
+            0b10000001000,
+            0b01000000100,
+            0b00100000010,
+            0b00010000001,
+            0b01000000100,
+            0b10000001000,
+            0b00010000001,
+            0b00100000010,
+            0b01000000100,
+            0b10000001000,
+            0b00100000010,
+            0b00010000001,
+        ];
 
-    //NOTE: does note check for overline
-    pub fn is_win(&self, pos: Pos, side: Side) -> bool {
-        self.is_pattern(pos, side, 0b11111, 5)
-    }
+        const FOUR_OFFSETS: &[Three<u8>] = &[
+            Three::Straight(4, 8),
+            Three::Straight(3, 7),
+            Three::Straight(2, 6),
+            Three::Straight(2, 6),
+            Three::Straight(3, 7),
+            Three::Straight(4, 8),
+            Three::Normal(8),
+            Three::Normal(7),
+            Three::Normal(6),
+            Three::Normal(4),
+            Three::Normal(6),
+            Three::Normal(7),
+            Three::Normal(2),
+            Three::Normal(3),
+            Three::Normal(4),
+            Three::Normal(6),
+            Three::Normal(4),
+            Three::Normal(3),
+        ];
 
-    pub fn has_piece(&self, pos: Pos, side: Side) -> bool {
-        self.at(pos) == Square::Piece(side)
-    }
-
-    pub fn is_potential_win(&self, pos: Pos, side: Side) -> bool {
-        let our_row = set_bit(self.get_row(pos.row(), side), pos.col(), true);
-        Self::is_pattern_impl(pos.col(), our_row, 0b11111, 5) && !self.has_piece(pos, !side)
-    }
-
-    // NOTE: this function will probably falsely report a five as a three. This should probably not be a
-    // problem anywhere
-    pub fn get_three(&self, pos: Pos, side: Side) -> Option<Pos> {
-        //detect threes by checking if one piece away from straight four (similar how fours
-        //are detected)
-        debug_assert!(SIZE == BOARD_SIZE || SIZE == DIAG_SIZE);
-        let mask_len = 6;
-
-        let max = (pos.col()).min(SIZE - mask_len);
-        let min = pos.col().saturating_sub(mask_len - 1);
-
-        let our_row = self.get_row(pos.row(), side);
-        let their_row = self.get_row(pos.row(), !side);
-        let border_row = if SIZE == BOARD_SIZE {
-            NORMAL_BOUNDARY.row(pos.row())
-        } else {
-            DIAGONAL_BOUNDARY.row(pos.row())
-        };
-        //println!("");
-
-        for shift in min..=max {
-            //TODO might be better to shift our_row >> shift, instead of all others
-            let four = 0b011110 << shift;
-            let four_mask = 0b111111 << shift;
-            let overline_mask = 0b10000001u32.wrapping_shl((shift as u32).saturating_sub(1));
-
-            let missing = (our_row & four_mask) ^ four;
-
-            if (their_row & four_mask) == 0
-                && (our_row & overline_mask) == 0
-                && missing.count_ones() == 1
-                && (border_row & four_mask) == 0
+        let mut i = 0;
+        while i < THREE_PATTERNS.len() {
+            if (our_row & THREE_PATTERNS[i]) == THREE_PATTERNS[i]
+                && (their_row & EMPTY_PATTERNS[i]) == 0
+                && (our_row & EMPTY_PATTERNS[i]) == 0
+                && (border_row & EMPTY_PATTERNS[i]) == 0
+                && (our_row & NO_OURS_PATTERNS[i]) == 0
             {
-                return Some(Pos::new(pos.row(), missing.trailing_zeros() as usize));
+                return Some(FOUR_OFFSETS[i].add(offset));
             }
+            i += 1;
         }
+
         None
     }
 
-    //bbbb.
-    //bbb.b
-    //bb.bb
-    //b.bbb
-    //.bbbb
-    //
-    //bbbbb. win
-    //bbbb.b four
-    //bbb.bb three
-    //bb.bbb three
-    //b.bbbb four
-    //..bbbb straight
-    fn get_fours_impl(&self, pos: Pos, our_row: u32, their_row: u32) -> Option<Four> {
-        debug_assert!(SIZE == BOARD_SIZE || SIZE == DIAG_SIZE);
-        let mask_len = 5;
+    pub fn get_three(&self, pos: Pos, side: Side) -> Option<Three<Pos>> {
+        let our_row = self.row_of(pos.row(), side);
+        let their_row = self.row_of(pos.row(), side.opposite());
+        let border_row = 0;
 
-        // detect four by counting missing piece for a five,
-        let max = (pos.col()).min(SIZE - mask_len);
-        let min = pos.col().saturating_sub(mask_len - 1);
-        let border_row = if SIZE == BOARD_SIZE {
-            NORMAL_BOUNDARY.row(pos.row())
-        } else {
-            DIAGONAL_BOUNDARY.row(pos.row())
-        };
-
-        let mut res = [None; 2];
-        let mut idx = 0;
-        let mut straight = false;
-
-        for shift in min..=max {
-            let win_mask = 0b11111 << shift;
-            let overline_mask = 0b1000001u32.wrapping_shl(shift as u32).wrapping_shr(1);
-
-            let masked_row = our_row & win_mask;
-            let missing = masked_row ^ win_mask;
-
-            //println!();
-            //println!("shift={} min={} max={}", shift, min, max);
-            //println!("our row ={:0>32b}", our_row);
-            //println!("win mask={:0>32b}", win_mask);
-            //println!("masked  ={:0>32b}", masked_row);
-            //println!("missing ={:0>32b}", missing);
-            //println!("overline={:0>32b}", overline_mask);
-
-            if (their_row & win_mask) == 0
-                && missing.count_ones() == 1
-                && (our_row & overline_mask) == 0
-                && (win_mask & border_row) == 0
-            {
-                res[idx] = Some(Pos::new(pos.row(), missing.trailing_zeros() as usize));
-                idx += 1;
-
-                if masked_row.wrapping_shr(masked_row.trailing_zeros()) == 0b1111 {
-                    straight = true;
-                }
-            }
-        }
-
-        match res {
-            [Some(a), Some(b)] if straight => Some(Four::Straight(a, b)),
-            [Some(a), Some(b)] if !straight => Some(Four::BrokenDouble(a, b)),
-            [Some(pos), None] | [None, Some(pos)] => Some(Four::Normal(pos)),
+        match Self::get_three_impl(pos.col(), our_row, their_row, border_row) {
+            Some(Three::Normal(col)) => Some(Three::Normal(Pos::new(pos.row(), col))),
+            Some(Three::Straight(col1, col2)) => Some(Three::Straight(
+                Pos::new(pos.row(), col1),
+                Pos::new(pos.row(), col2),
+            )),
             _ => None,
         }
     }
 
-    pub fn get_potential_fours(&self, pos: Pos, side: Side) -> Option<Four> {
-        debug_assert!(SIZE == BOARD_SIZE || SIZE == DIAG_SIZE);
-
-        let our_row = set_bit(self.get_row(pos.row(), side), pos.col(), true);
-        let their_row = self.get_row(pos.row(), !side);
-        self.get_fours_impl(pos, our_row, their_row)
-    }
-
-    pub fn get_fours(&self, pos: Pos, side: Side) -> Option<Four> {
-        let our_row = self.get_row(pos.row(), side);
-        let their_row = self.get_row(pos.row(), !side);
-        self.get_fours_impl(pos, our_row, their_row)
+    //NOTE you should probably not use this
+    const fn is_oob(&self, pos: Pos) -> bool {
+        pos.col() as usize >= SIZE || pos.row() as usize >= SIZE
     }
 }
 
-pub struct Board {
-    //Row Major
-    board0: PieceBoard<BOARD_SIZE>,
-    //Column Major
-    board1: PieceBoard<BOARD_SIZE>,
-
-    //Left Bottom to Right Top
-    board2: PieceBoard<DIAG_SIZE>,
-    //Left Top to Right Bottom
-    board3: PieceBoard<DIAG_SIZE>,
-}
-
-impl fmt::Debug for Board {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        writeln!(f, "Row Major")?;
-        writeln!(f, "{:?}", self.board0)?;
-
-        writeln!(f, "Column Major")?;
-        writeln!(f, "{:?}", self.board1)?;
-
-        writeln!(f, "Left Bottom to Right Top")?;
-        writeln!(f, "{:?}", self.board2)?;
-
-        writeln!(f, "Left Top to Right Bottom")?;
-        writeln!(f, "{:?}", self.board3)
-    }
-}
-
-impl Board {
-    pub fn new() -> Self {
-        Board {
-            board0: PieceBoard::new(),
-            board1: PieceBoard::new(),
-            board2: PieceBoard::new(),
-            board3: PieceBoard::new(),
-        }
-    }
-
-    pub const fn normal_boundary_board() -> BitBoard<BOARD_SIZE> {
-        let mut board: BitBoard<BOARD_SIZE> = BitBoard::filled();
-        let mut row = 0;
-
-        while row < BOARD_SIZE {
-            let mut col = 0;
-            while col < BOARD_SIZE {
-                board = board.set_move(Pos::new(row, col), false);
-                col += 1;
-            }
-            row += 1;
-        }
-        board
-    }
-
-    pub const fn diag_boundary_board() -> BitBoard<DIAG_SIZE> {
-        let mut board: BitBoard<DIAG_SIZE> = BitBoard::new();
-        let mut row = 0;
-
-        while row < BOARD_SIZE {
-            let mut col = 0;
-            while col < BOARD_SIZE {
-                let pos = Pos::new(row, col);
-                board = board.set_move(Self::diag_right(pos), true);
-                col += 1;
-            }
-            row += 1;
-        }
-
-        board.not()
-    }
-
-    pub fn at(&self, pos: Pos) -> Square {
-        self.board0.at(pos)
-    }
-
-    pub const fn diag_right(pos: Pos) -> Pos {
-        let pos = Self::rot_right(pos);
-        let v = (DIAG_SIZE / 2).abs_diff(pos.row());
-        let pos = Pos::new(pos.row(), pos.col() - v);
-        let pos = Pos::new(pos.row(), pos.col() - (pos.col() / 2));
-        pos
-    }
-
-    pub const fn diag_left(pos: Pos) -> Pos {
-        let pos = Self::rot_left(pos);
-        let v = (DIAG_SIZE / 2).abs_diff(pos.row());
-        let pos = Pos::new(pos.row(), pos.col() - v);
-        let pos = Pos::new(pos.row(), pos.col() - (pos.col() / 2));
-        pos
-    }
-
-    pub const fn rot_right(pos: Pos) -> Pos {
-        Self::rot_left(pos).transpose()
-    }
-
-    pub fn gen_table<F: Fn(Pos) -> Pos>(f: F) {
-        let mut transformed = HashMap::new();
-        let mut inverse = HashMap::new();
-
-        let mut max_row = 0;
-        let mut max_col = 0;
-
-        for row in 0..BOARD_SIZE {
-            for col in 0..BOARD_SIZE {
-                let pos = Pos::new(row, col);
-
-                let tpos = f(pos);
-
-                max_row = max_row.max(tpos.row());
-                max_col = max_col.max(tpos.col());
-
-                transformed.insert(pos, tpos);
-                inverse.insert(tpos, pos);
-            }
-        }
-        print!("const TRANSFORM_TABLE: &'static [&'static [Pos]] = &[");
-
-        for row in 0..BOARD_SIZE {
-            print!("&[");
-            for col in 0..BOARD_SIZE {
-                let pos = Pos::new(row, col);
-                if let Some(tpos) = transformed.get(&pos) {
-                    print!("Pos::new({}, {}),", tpos.row(), tpos.col());
-                } else {
-                    panic!("this should not happen");
-                }
-            }
-            println!("],");
-        }
-        println!("];");
-
-        println!("const INVERSE_TABLE: &'static [&'static [Pos]] = &[");
-        for row in 0..=max_row {
-            print!("&[");
-            for col in 0..=max_col {
-                let pos = Pos::new(row, col);
-                print!("Pos::new(");
-                if let Some(tpos) = inverse.get(&pos) {
-                    print!("{}, {}", tpos.row(), tpos.col());
-                } else {
-                    print!("1000,1000");
-                }
-                print!("),");
-            }
-            println!("],");
-        }
-        println!("];");
-    }
-
-    //https://math.stackexchange.com/a/733222
-    pub const fn rot_left(pos: Pos) -> Pos {
-        Pos::new(
-            pos.row() + pos.col(),
-            (BOARD_SIZE - 1) - pos.row() + pos.col(),
-        )
-    }
-
-    pub fn set(&mut self, pos: Pos, val: Square) {
-        self.board0.set(pos, val);
-        self.board1.set(pos.transpose(), val);
-        self.board2.set(transform_right(pos), val);
-        self.board3.set(transform_left(pos), val);
-    }
-
-    pub fn is_oob(&self, pos: Pos) -> bool {
-        pos.row() >= BOARD_SIZE || pos.col() >= BOARD_SIZE
-    }
-
-    pub fn is_free(&self, pos: Pos) -> bool {
-        self.at(pos) == Square::Empty
-    }
-
-    pub fn row_major(&self) -> &PieceBoard<BOARD_SIZE> {
-        &self.board0
-    }
-
-    pub fn check_self(&self) {
-        for row in 0..BOARD_SIZE {
-            for col in 0..BOARD_SIZE {
-                let pos = Pos::new(row, col);
-                let val = self.board0.at(pos);
-
-                assert_eq!(self.board1.at(pos.transpose()), val);
-                assert_eq!(self.board2.at(Self::diag_right(pos)), val);
-                assert_eq!(self.board3.at(Self::diag_left(pos)), val);
-            }
-        }
-    }
-
-    pub fn is_overline(&self, pos: Pos, side: Side) -> bool {
-        self.board0.is_overline(pos, side)
-            || self.board1.is_overline(pos.transpose(), side)
-            || self.board2.is_overline(transform_right(pos), side)
-            || self.board3.is_overline(transform_left(pos), side)
-    }
-
-    pub fn is_win(&self, pos: Pos, side: Side) -> bool {
-        self.board0.is_win(pos, side)
-            || self.board1.is_win(pos.transpose(), side)
-            || self.board2.is_win(transform_right(pos), side)
-            || self.board3.is_win(transform_left(pos), side)
-    }
-
-    pub fn is_double_three(&self, pos: Pos, side: Side) -> bool {
-        self.count_threes(pos, side) >= 2
-    }
-
-    pub fn get_threes(&self, pos: Pos, side: Side) -> [Option<Pos>; 4] {
-        [
-            self.board0.get_three(pos, side),
-            self.board1
-                .get_three(pos.transpose(), side)
-                .map(Pos::transpose),
-            self.board2
-                .get_three(transform_right(pos), side)
-                .map(untransform_right),
-            self.board3
-                .get_three(transform_left(pos), side)
-                .map(untransform_left),
-        ]
-    }
-
-    // Renju double threes are a bit special, it is only a double three if it guarantees a win, so
-    // take for example the following board:
-    // h8g9g11e12h12i13e14
-    //
-    // One might think that e11 is a forbidden move for black, as it would result in two threes,
-    // one where you create a straight four on e13 and one on f10. However, f10 would actually be a
-    // double four, which is a forbidden move, so in reality we only have created one possible for
-    // a straight four, and thus not a guaranteed win.
-    //
-    // See: https://www.renju.net/rifrules/ 9.3a
-    pub fn is_renju_double_three(&self, pos: Pos, side: Side) -> bool {
-        let threes = self.get_threes(pos, side);
-        let cnt = threes
-            .iter()
-            .filter_map(|x| *x)
-            .filter(|pos| !self.is_potential_win(*pos, side))
-            .filter(|pos| {
-                self.get_potential_fours(*pos, side)
-                    .iter()
-                    .any(|x| match x {
-                        Some(Four::Straight(_, _)) => true,
-                        _ => false,
-                    })
-            })
-            .filter(|pos| self.count_potential_fours(*pos, side) < 2)
-            .count();
-        cnt > 1
-    }
-
-    pub fn count_threes(&self, pos: Pos, side: Side) -> u8 {
-        if self.board0.at(pos) != Square::Piece(side) {
-            return 0;
-        }
-
-        let mut three_count = 0;
-
-        if self.board0.get_three(pos, side) != None {
-            three_count += 1;
-        }
-        if self.board1.get_three(pos.transpose(), side) != None {
-            three_count += 1;
-        }
-        if self.board2.get_three(Self::diag_right(pos), side) != None {
-            three_count += 1;
-        }
-        if self.board3.get_three(Self::diag_left(pos), side) != None {
-            three_count += 1;
-        }
-
-        three_count
-    }
-
-    pub fn is_double_four(&self, pos: Pos, side: Side) -> bool {
-        self.count_fours(pos, side) >= 2
-    }
-
-    pub fn get_fours(&self, pos: Pos, side: Side) -> [Option<Four>; 4] {
-        [
-            self.board0.get_fours(pos, side),
-            self.board1
-                .get_fours(pos.transpose(), side)
-                .map(|x| x.map(Pos::transpose)),
-            self.board2
-                .get_fours(transform_right(pos), side)
-                .map(|x| x.map(untransform_right)),
-            self.board3
-                .get_fours(transform_left(pos), side)
-                .map(|x| x.map(untransform_left)),
-        ]
-    }
-
-    pub fn count_fours(&self, pos: Pos, side: Side) -> u8 {
-        self.get_fours(pos, side)
-            .into_iter()
-            .filter_map(std::convert::identity)
-            .map(|x| match x {
-                Four::Normal(_) | Four::Straight(_, _) => 1,
-                Four::BrokenDouble(_, _) => 2,
-            })
-            .sum()
-    }
-
-    pub fn get_potential_fours(&self, pos: Pos, side: Side) -> [Option<Four>; 4] {
-        [
-            self.board0.get_potential_fours(pos, side),
-            self.board1
-                .get_potential_fours(pos.transpose(), side)
-                .map(|x| x.map(Pos::transpose)),
-            self.board2
-                .get_potential_fours(transform_right(pos), side)
-                .map(|x| x.map(untransform_right)),
-            self.board3
-                .get_potential_fours(transform_left(pos), side)
-                .map(|x| x.map(untransform_left)),
-        ]
-    }
-
-    pub fn count_potential_fours(&self, pos: Pos, side: Side) -> u8 {
-        self.get_potential_fours(pos, side)
-            .into_iter()
-            .filter_map(std::convert::identity)
-            .map(|x| match x {
-                Four::Normal(_) | Four::Straight(_, _) => 1,
-                Four::BrokenDouble(_, _) => 2,
-            })
-            .sum()
-    }
-
-    pub fn is_potential_win(&self, pos: Pos, side: Side) -> bool {
-        self.board0.is_potential_win(pos, side)
-            || self.board1.is_potential_win(pos.transpose(), side)
-            || self.board2.is_potential_win(transform_right(pos), side)
-            || self.board3.is_potential_win(transform_left(pos), side)
-    }
-
-    pub const fn size(&self) -> usize {
-        15
-    }
-
-    pub const fn left_right(&self) -> &PieceBoard<BOARD_SIZE> {
-        &self.board0
-    }
-
-    pub const fn top_bot(&self) -> &PieceBoard<BOARD_SIZE> {
-        &self.board1
-    }
-
-    pub const fn bot_left_top_right(&self) -> &PieceBoard<DIAG_SIZE> {
-        &self.board2
-    }
-
-    pub const fn top_left_bot_right(&self) -> &PieceBoard<DIAG_SIZE> {
-        &self.board3
-    }
-}
-
-impl str::FromStr for Board {
+impl<const SIZE: usize> FromStr for PieceBoard<SIZE> {
     type Err = Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         if !s.is_ascii() {
-            bail!("not ascii");
+            bail!("must be ascii string");
         }
 
-        let mut board = Board::new();
-        let mut iter = s.chars().peekable();
+        let mut board = Self::new();
 
+        let mut iter = s.chars().peekable();
         while let Some(ch) = iter.next() {
             if !ch.is_ascii_alphabetic() {
-                bail!("not alpabetic");
+                bail!("not ascii alpha");
             }
 
             let side = if ch.is_ascii_lowercase() {
@@ -777,52 +473,130 @@ impl str::FromStr for Board {
             } else {
                 Side::White
             };
-            let col = ch.to_ascii_lowercase() as usize - 'a' as usize;
 
-            let mut got_digit = false;
-            let mut row: usize = 0;
+            let col = ch.to_ascii_lowercase() as u8 - b'a';
 
-            while let Some(digit) = iter.peek().and_then(|x| x.to_digit(10)) {
-                got_digit = true;
-                row = row.checked_mul(10).ok_or(Error::msg("number too large"))?;
-                row = row
-                    .checked_add(digit as usize)
-                    .ok_or(Error::msg("number too large"))?;
+            let mut row = String::new();
 
+            while let Some(digit) = iter.peek().filter(|x| char::is_ascii_digit(x)) {
+                row.push(*digit);
                 iter.nth(0);
             }
 
-            if !got_digit {
-                bail!("no row specified");
-            }
+            let row: u8 = row.parse()?;
 
             if row == 0 {
                 bail!("row must be > 0");
             }
 
             let pos = Pos::new(row - 1, col);
-
             if board.is_oob(pos) {
                 bail!("out of bounds");
             }
 
-            if !board.is_free(pos) {
-                bail!("already piece on pos {} ", pos);
-            }
-
-            board.set(pos, Square::Piece(side));
+            board = board.set(pos, Some(side));
         }
         Ok(board)
     }
 }
 
+pub const RENJU_BOARD_SIZE: usize = 15;
+pub const RENJU_BOARD_SIZEU8: u8 = RENJU_BOARD_SIZE as u8;
+
+#[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
+pub struct Board {
+    board0: PieceBoard<RENJU_BOARD_SIZE>, // row major
+    board1: PieceBoard<RENJU_BOARD_SIZE>, // column major
+}
+
+impl Board {
+    const MARGIN: u8 = 12;
+
+    pub const fn new() -> Self {
+        Self {
+            board0: PieceBoard::new(),
+            board1: PieceBoard::new(),
+        }
+    }
+
+    pub const fn centre(pos: Pos) -> Pos {
+        Pos::new(pos.row(), pos.col() + Self::MARGIN)
+    }
+
+    pub const fn decentre(pos: Pos) -> Pos {
+        Pos::new(pos.row(), pos.col() - Self::MARGIN)
+    }
+
+    pub const fn set(mut self, pos: Pos, val: Option<Side>) -> Self {
+        self.board0 = self.board0.set(Self::centre(pos), val);
+        self.board1 = self.board1.set(Self::centre(pos.transpose()), val);
+        self
+    }
+
+    pub const fn at(&self, pos: Pos) -> Option<Side> {
+        let pos = Self::centre(pos);
+
+        self.board0.at(pos)
+    }
+
+    pub fn get_threes(&self, pos: Pos, side: Side) -> [Option<Three<Pos>>; 4] {
+        [
+            self.board0
+                .get_three(Self::centre(pos), side)
+                .map(|x| x.map(Self::decentre)),
+            self.board1
+                .get_three(Self::centre(pos.transpose()), side)
+                .map(|x| x.map(Self::decentre).map(Pos::transpose)),
+            None,
+            None,
+        ]
+    }
+
+    pub const fn size(&self) -> u8 {
+        RENJU_BOARD_SIZE as u8
+    }
+
+    pub const fn normal_boundary_board() -> BitBoard<RENJU_BOARD_SIZE> {
+        let board: BitBoard<RENJU_BOARD_SIZE> = BitBoard::filled();
+
+        let mut row = 0;
+        while row < RENJU_BOARD_SIZEU8 {
+            let mut col = 0;
+            while col < RENJU_BOARD_SIZEU8 {
+                let pos = Pos::new(row, col);
+                board.set(Self::centre(pos), false);
+                col += 1;
+            }
+            row += 1;
+        }
+        board
+    }
+}
+
+impl FromStr for Board {
+    type Err = <PieceBoard<RENJU_BOARD_SIZE> as FromStr>::Err;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let board: PieceBoard<RENJU_BOARD_SIZE> = s.parse()?;
+        let mut res = Self::new();
+
+        for row in 0..RENJU_BOARD_SIZE {
+            for col in 0..RENJU_BOARD_SIZE {
+                let pos = Pos::new(row as u8, col as u8);
+                res = res.set(pos, board.at(pos));
+            }
+        }
+        Ok(res)
+    }
+}
+
 impl fmt::Display for Board {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for row in 0..BOARD_SIZE {
-            for col in 0..BOARD_SIZE {
+        for row in 0..RENJU_BOARD_SIZEU8 {
+            for col in 0..RENJU_BOARD_SIZEU8 {
                 let pos = Pos::new(row, col);
 
-                if let Square::Piece(side) = self.at(pos) {
+                if let Some(side) = self.at(pos) {
                     let s = if side == Side::White {
                         pos.to_string().to_uppercase()
                     } else {
@@ -839,40 +613,32 @@ impl fmt::Display for Board {
 
 #[cfg(test)]
 mod tests {
-    use super::{BitBoard, Board, PieceBoard, Pos, Side, Square, BOARD_SIZE, DIAGONAL_BOUNDARY};
-    use crate::table::*;
+    use crate::board::{BitBoard, Board, PieceBoard, Side, Three, RENJU_BOARD_SIZEU8};
     use anyhow::Result;
     use std::collections::HashSet;
-
-    fn get_fours(board: &Board, pos: Pos) -> HashSet<Pos> {
-        board
-            .get_fours(pos, Side::Black)
-            .into_iter()
-            .filter_map(std::convert::identity)
-            .flatten()
-            .collect()
-    }
+    use tools::Pos;
 
     #[test]
-    fn empty_board() {
-        let board = Board::new();
+    fn place_and_remove_bitboard() {
+        let mut board: BitBoard<15> = BitBoard::new();
 
-        board.check_self();
-        for row in 0..BOARD_SIZE {
-            for col in 0..BOARD_SIZE {
-                assert!(board.is_free((row, col).into()));
-            }
-        }
+        let pos = Pos::new(4, 6);
+        board = board.set(pos, true);
+        assert_eq!(board.at(pos), true);
+
+        board = board.set(pos, false);
+        assert_eq!(board.at(pos), false);
     }
 
     #[test]
     fn parse_empty_board() {
-        let board: Board = "".parse().unwrap();
+        const SIZE: usize = 15;
+        let board: PieceBoard<SIZE> = "".parse().unwrap();
 
-        board.check_self();
-        for row in 0..BOARD_SIZE {
-            for col in 0..BOARD_SIZE {
-                assert!(board.is_free((row, col).into()));
+        //board.check_self();
+        for row in 0..SIZE {
+            for col in 0..SIZE {
+                assert_eq!(board.at((row as u8, col as u8).into()), None);
             }
         }
     }
@@ -905,8 +671,8 @@ mod tests {
             Side::White
         };
 
-        let board: Board = b.parse().unwrap();
-        assert_eq!(board.at(b.parse().unwrap()), Square::Piece(side));
+        let board: PieceBoard<15> = b.parse().unwrap();
+        assert_eq!(board.at(b.parse().unwrap()), Some(side));
     }
 
     #[test]
@@ -921,469 +687,264 @@ mod tests {
 
     #[test]
     fn parse_board() -> Result<()> {
-        let board: Board = "g7N4c7E12i4E2i9G9e6g6".parse()?;
+        let board: PieceBoard<15> = "g7N4c7E12i4E2i9G9e6g6".parse()?;
 
-        assert_eq!(board.at("g7".parse()?), Square::Piece(Side::Black));
-        assert_eq!(board.at("n4".parse()?), Square::Piece(Side::White));
-        assert_eq!(board.at("c7".parse()?), Square::Piece(Side::Black));
-        assert_eq!(board.at("e12".parse()?), Square::Piece(Side::White));
-        assert_eq!(board.at("i4".parse()?), Square::Piece(Side::Black));
-        assert_eq!(board.at("e2".parse()?), Square::Piece(Side::White));
-        assert_eq!(board.at("i9".parse()?), Square::Piece(Side::Black));
-        assert_eq!(board.at("g9".parse()?), Square::Piece(Side::White));
-        assert_eq!(board.at("e6".parse()?), Square::Piece(Side::Black));
-        assert_eq!(board.at("e6".parse()?), Square::Piece(Side::Black));
+        assert_eq!(board.at("g7".parse()?), Some(Side::Black));
+        assert_eq!(board.at("n4".parse()?), Some(Side::White));
+        assert_eq!(board.at("c7".parse()?), Some(Side::Black));
+        assert_eq!(board.at("e12".parse()?), Some(Side::White));
+        assert_eq!(board.at("i4".parse()?), Some(Side::Black));
+        assert_eq!(board.at("e2".parse()?), Some(Side::White));
+        assert_eq!(board.at("i9".parse()?), Some(Side::Black));
+        assert_eq!(board.at("g9".parse()?), Some(Side::White));
+        assert_eq!(board.at("e6".parse()?), Some(Side::Black));
+        assert_eq!(board.at("e6".parse()?), Some(Side::Black));
         Ok(())
     }
 
     #[test]
-    fn place_single() {
-        let mut board = Board::new();
+    fn detect_three1() -> Result<()> {
+        let three = PieceBoard::<15>::get_three_impl(14, 0b111 << 15, 0, 0);
+        assert_eq!(three, None);
+        let three = PieceBoard::<15>::get_three_impl(15, 0b111 << 15, 0, 0);
+        assert_eq!(three, Some(Three::Straight(14, 18)));
+        let three = PieceBoard::<15>::get_three_impl(16, 0b111 << 15, 0, 0);
+        assert_eq!(three, Some(Three::Straight(14, 18)));
+        let three = PieceBoard::<15>::get_three_impl(17, 0b111 << 15, 0, 0);
+        assert_eq!(three, Some(Three::Straight(14, 18)));
+        let three = PieceBoard::<15>::get_three_impl(18, 0b111 << 15, 0, 0);
+        assert_eq!(three, None);
 
-        board.set(Pos::new(0, 0), Square::Piece(Side::Black));
-        board.check_self();
+        let three = PieceBoard::<15>::get_three_impl(15, 0b111 << 16, 0, 0);
+        assert_eq!(three, None);
+        let three = PieceBoard::<15>::get_three_impl(16, 0b111 << 16, 0, 0);
+        assert_eq!(three, Some(Three::Straight(15, 19)));
 
-        let mut board = Board::new();
-
-        board.set(Pos::new(0, 1), Square::Piece(Side::White));
-        board.check_self();
-
-        let mut board = Board::new();
-        board.set(Pos::new(1, 0), Square::Piece(Side::White));
-        board.check_self();
+        let three = PieceBoard::<15>::get_three_impl(15, 0b111 << 15, 0b0001 << 14, 0);
+        assert_eq!(three, None);
+        let three = PieceBoard::<15>::get_three_impl(15, 0b111 << 15, 0b10000 << 14, 0);
+        assert_eq!(three, None);
+        let three = PieceBoard::<15>::get_three_impl(15, 0b111 << 15, 0, 0b0001 << 14);
+        assert_eq!(three, None);
+        let three = PieceBoard::<15>::get_three_impl(15, 0b111 << 15, 0, 0b10000 << 14);
+        assert_eq!(three, None);
+        Ok(())
     }
 
     #[test]
-    fn place_everywhere_once() {
-        let mut side = Side::Black;
+    fn three_equality() {
+        let a: Three<u8> = Three::Normal(1);
+        let b: Three<u8> = Three::Normal(2);
+        let c: Three<u8> = Three::Normal(1);
+        let d: Three<u8> = Three::Straight(42, 21);
+        let e: Three<u8> = Three::Straight(21, 42);
+        let f: Three<u8> = Three::Straight(51, 34);
 
-        for row in 0..BOARD_SIZE {
-            for col in 0..BOARD_SIZE {
-                let mut board = Board::new();
-                board.set((row, col).into(), Square::Piece(side));
-                board.check_self();
+        assert_eq!(a, c);
+        assert_eq!(c, a);
+        assert_ne!(a, b);
+        assert_ne!(b, a);
+        assert_ne!(a, d);
+        assert_ne!(a, e);
+        assert_ne!(a, f);
 
-                side = !side;
+        assert_ne!(d, a);
+        assert_ne!(e, a);
+        assert_ne!(f, a);
+        assert_ne!(d, b);
+        assert_ne!(e, b);
+        assert_ne!(f, b);
+
+        assert_eq!(d, e);
+        assert_eq!(e, d);
+
+        assert_ne!(d, f);
+        assert_ne!(f, d);
+
+        assert_ne!(e, f);
+        assert_ne!(f, e);
+    }
+
+    #[test]
+    fn parse_empty_renju_board() {
+        let board: Board = "".parse().unwrap();
+
+        //board.check_self();
+        for row in 0..RENJU_BOARD_SIZEU8 {
+            for col in 0..RENJU_BOARD_SIZEU8 {
+                assert_eq!(board.at((row as u8, col as u8).into()), None);
             }
         }
     }
 
-    #[test]
-    fn double_three_horiz_vert() -> Result<()> {
-        let board: Board = "h11h10j8k8h8".parse()?;
+    fn test_renju_board_one_piece(b: &str) {
+        assert!(b.is_ascii());
+        let side = if (b.as_bytes()[0] as char).is_ascii_lowercase() {
+            Side::Black
+        } else {
+            Side::White
+        };
 
-        assert_eq!(board.is_double_three("h8".parse()?, Side::Black), true);
-        assert_eq!(board.is_double_three("h11".parse()?, Side::Black), false);
-        assert_eq!(board.is_double_three("h10".parse()?, Side::Black), false);
-        assert_eq!(board.is_double_three("j8".parse()?, Side::Black), false);
-        assert_eq!(board.is_double_three("k8".parse()?, Side::Black), false);
-        Ok(())
+        let board: Board = b.parse().unwrap();
+        assert_eq!(board.at(b.parse().unwrap()), Some(side));
     }
 
     #[test]
-    fn double_three_diag_horiz() -> Result<()> {
-        let board: Board = "h8i8j8f10e11".parse()?;
+    fn parse_single_piece_renju() {
+        test_renju_board_one_piece("a1");
+        test_renju_board_one_piece("A1");
+        test_renju_board_one_piece("m6");
+        test_renju_board_one_piece("e12");
+        test_renju_board_one_piece("E12");
+        test_renju_board_one_piece("g2");
+    }
 
-        assert_eq!(board.is_double_three("h8".parse()?, Side::Black), true);
-        assert_eq!(board.is_double_three("i8".parse()?, Side::Black), false);
-        assert_eq!(board.is_double_three("j8".parse()?, Side::Black), false);
-        assert_eq!(board.is_double_three("f10".parse()?, Side::Black), false);
-        assert_eq!(board.is_double_three("e11".parse()?, Side::Black), false);
-        Ok(())
+    fn test_three(board: &str, pos: &str, threes: &[&str]) {
+        let pos = pos.parse().unwrap();
+        let board: Board = board.parse().unwrap();
+        let threes: HashSet<Pos> = threes.iter().map(|x| x.parse().unwrap()).collect();
+
+        let res = board
+            .get_threes(pos, Side::Black)
+            .iter()
+            .cloned()
+            .filter_map(std::convert::identity)
+            .flatten()
+            .collect();
+        assert_eq!(threes, res);
     }
 
     #[test]
-    fn allow_four_three() -> Result<()> {
-        let board: Board = "j8k8h10h11h12h8".parse()?;
-
-        // h8 is not a double three, placing a black stone on h8 will make a four and a three at
-        // the same time, which is allowed
-        assert_eq!(board.is_double_three("h8".parse()?, Side::Black), false);
-        assert_eq!(board.is_double_three("j8".parse()?, Side::Black), false);
-        assert_eq!(board.is_double_three("k8".parse()?, Side::Black), false);
-        assert_eq!(board.is_double_three("h10".parse()?, Side::Black), false);
-        assert_eq!(board.is_double_three("h11".parse()?, Side::Black), false);
-        assert_eq!(board.is_double_three("h12".parse()?, Side::Black), false);
-        Ok(())
-    }
-
-    #[test]
-    fn diagonal_three() -> Result<()> {
-        let board: Board = "f10g9h8".parse()?;
-
-        assert_eq!(board.count_threes("f10".parse()?, Side::Black), 1);
-        assert_eq!(board.count_threes("g9".parse()?, Side::Black), 1);
-        assert_eq!(board.count_threes("h8".parse()?, Side::Black), 1);
-        Ok(())
-    }
-
-    #[test]
-    fn incorrect_three() -> Result<()> {
-        let board: Board = "h4h5h6h8".parse()?;
-
-        assert_eq!(board.count_threes("h8".parse()?, Side::Black), 0);
-        Ok(())
-    }
-
-    #[test]
-    fn double_four() -> Result<()> {
-        let board: Board = "h8i8j8k8h9h10h11".parse()?;
-
-        assert_eq!(board.is_double_four("h8".parse()?, Side::Black), true);
-        Ok(())
-    }
-
-    #[test]
-    fn win_positions() -> Result<()> {
-        let board: Board = "f8g8h8i8j8k8".parse()?;
-
-        assert_eq!(board.is_win("f8".parse()?, Side::Black), true);
-        assert_eq!(board.is_win("g8".parse()?, Side::Black), true);
-        assert_eq!(board.is_win("h8".parse()?, Side::Black), true);
-        assert_eq!(board.is_win("i8".parse()?, Side::Black), true);
-        assert_eq!(board.is_win("j8".parse()?, Side::Black), true);
-        assert_eq!(board.is_win("k8".parse()?, Side::Black), true);
-        Ok(())
-    }
-
-    #[test]
-    fn double_four_one_diag_line() -> Result<()> {
-        let board: Board = "d5f7h9j11g8".parse()?;
-
-        assert_eq!(board.is_double_four("g8".parse()?, Side::Black), true);
-        Ok(())
-    }
-
-    #[test]
-    fn double_four_one_horiz_line() -> Result<()> {
-        let board: Board = "e8g8h8i8k8".parse()?;
-
-        assert_eq!(board.is_double_four("h8".parse()?, Side::Black), true);
-        Ok(())
-    }
-
-    #[test]
-    fn no_double_four() -> Result<()> {
-        let board: Board = "g8h8i8j8".parse()?;
-
-        let fours: HashSet<Pos> = ["f8".parse()?, "k8".parse()?].into_iter().collect();
-
-        assert_eq!(get_fours(&board, "j8".parse()?), fours);
-        assert_eq!(get_fours(&board, "g8".parse()?), fours);
-        assert_eq!(get_fours(&board, "h8".parse()?), fours);
-        assert_eq!(get_fours(&board, "i8".parse()?), fours);
-        Ok(())
-    }
-
-    #[test]
-    fn no_diag_three_at_edge() -> Result<()> {
-        let board: Board = "i1h2f4".parse()?;
-
-        assert_eq!(board.count_threes("i1".parse()?, Side::Black), 0);
-        assert_eq!(board.count_threes("h2".parse()?, Side::Black), 0);
-        assert_eq!(board.count_threes("f4".parse()?, Side::Black), 0);
-        Ok(())
-    }
-
-    #[test]
-    fn vertical_straight_four() -> Result<()> {
-        let board: Board = "h8h9h10h11".parse()?;
-
-        let fours = ["h7".parse()?, "h12".parse()?].into_iter().collect();
-
-        assert_eq!(get_fours(&board, "h8".parse()?), fours);
-        assert_eq!(get_fours(&board, "h9".parse()?), fours);
-        assert_eq!(get_fours(&board, "h10".parse()?), fours);
-        assert_eq!(get_fours(&board, "h11".parse()?), fours);
-        Ok(())
-    }
-
-    #[test]
-    fn win_no_four() -> Result<()> {
-        let board: Board = "h8h9h10h11h12".parse()?;
-
-        for pos in board.get_fours("h6".parse()?, Side::Black) {
-            assert_eq!(pos, None);
-        }
-
-        Ok(())
-    }
-
-    #[test]
-    fn diag_straight_four() -> Result<()> {
-        let board: Board = "g7h8i9j10".parse()?;
-
-        let fours: HashSet<Pos> = ["f6".parse()?, "k11".parse()?].into_iter().collect();
-
-        assert_eq!(get_fours(&board, "g7".parse()?), fours);
-        assert_eq!(get_fours(&board, "h8".parse()?), fours);
-        assert_eq!(get_fours(&board, "i9".parse()?), fours);
-        assert_eq!(get_fours(&board, "j10".parse()?), fours);
-
-        Ok(())
-    }
-
-    #[test]
-    fn place_and_remove_bitboard() {
-        let mut board: BitBoard<15> = BitBoard::new();
-
-        let pos = Pos::new(4, 6);
-        board.set(pos, true);
-        assert_eq!(board.at(pos), true);
-
-        board.set(pos, false);
-        assert_eq!(board.at(pos), false);
-    }
-
-    #[test]
-    fn overline_is_not_three() -> Result<()> {
-        let board: Board = "e8f8h8j8".parse()?;
-
-        assert_eq!(board.count_threes("e8".parse()?, Side::Black), 0);
-        assert_eq!(board.count_threes("f8".parse()?, Side::Black), 0);
-        assert_eq!(board.count_threes("h8".parse()?, Side::Black), 0);
-        assert_eq!(board.count_threes("j8".parse()?, Side::Black), 0);
-
-        Ok(())
-    }
-
-    #[test]
-    fn three_near_edge_horiz() -> Result<()> {
-        let board: Board = "b14c14d14".parse()?;
-
-        assert_eq!(board.count_threes("b14".parse()?, Side::Black), 1);
-        assert_eq!(board.count_threes("c14".parse()?, Side::Black), 1);
-        assert_eq!(board.count_threes("d14".parse()?, Side::Black), 1);
-        Ok(())
-    }
-
-    #[test]
-    fn three_near_edge_diag() -> Result<()> {
-        let board: Board = "d12c13b14".parse()?;
-
-        assert_eq!(board.count_threes("d12".parse()?, Side::Black), 1);
-        assert_eq!(board.count_threes("c13".parse()?, Side::Black), 1);
-        assert_eq!(board.count_threes("b14".parse()?, Side::Black), 1);
-        Ok(())
-    }
-
-    #[test]
-    fn three_near_edge_diag2() -> Result<()> {
-        let board: Board = "d5c6b7".parse()?;
-
-        println!("{:?}", DIAGONAL_BOUNDARY);
-        assert_eq!(board.count_threes("d5".parse()?, Side::Black), 1);
-        assert_eq!(board.count_threes("c6".parse()?, Side::Black), 1);
-        assert_eq!(board.count_threes("b7".parse()?, Side::Black), 1);
-        Ok(())
-    }
-
-    #[test]
-    fn four_near_edge_horiz() -> Result<()> {
-        let board: Board = "b8c8d8e8".parse()?;
-
-        let fours = ["a8".parse()?, "f8".parse()?].into_iter().collect();
-
-        assert_eq!(get_fours(&board, "b8".parse()?), fours);
-        assert_eq!(get_fours(&board, "c8".parse()?), fours);
-        assert_eq!(get_fours(&board, "d8".parse()?), fours);
-        assert_eq!(get_fours(&board, "e8".parse()?), fours);
-        Ok(())
-    }
-
-    #[test]
-    fn four_near_edge_diag() -> Result<()> {
-        let board: Board = "f11e12d13c14".parse()?;
-
-        let fours = ["b15".parse()?, "g10".parse()?].into_iter().collect();
-
-        assert_eq!(get_fours(&board, "f11".parse()?), fours);
-        assert_eq!(get_fours(&board, "e12".parse()?), fours);
-        assert_eq!(get_fours(&board, "d13".parse()?), fours);
-        assert_eq!(get_fours(&board, "c14".parse()?), fours);
-        Ok(())
-    }
-
-    #[test]
-    fn double_three_near_edge() -> Result<()> {
-        let board: Board = "f12e13b14c14d14".parse()?;
-
-        assert_eq!(board.is_double_three("d14".parse()?, Side::Black), true);
-        Ok(())
-    }
-
-    #[test]
-    fn no_double_three_single_diag() -> Result<()> {
-        let board: Board = "f7h9i10k12".parse()?;
-
-        assert_eq!(board.count_threes("f7".parse()?, Side::Black), 0);
-        assert_eq!(board.count_threes("h9".parse()?, Side::Black), 0);
-        assert_eq!(board.count_threes("i10".parse()?, Side::Black), 0);
-        assert_eq!(board.count_threes("k12".parse()?, Side::Black), 0);
-        Ok(())
-    }
-
-    #[test]
-    fn diag_three_no_overline() -> Result<()> {
-        let board: Board = "e5h8i9j10".parse()?;
-
-        assert_eq!(board.count_threes("h8".parse()?, Side::Black), 1);
-        assert_eq!(board.count_threes("i9".parse()?, Side::Black), 1);
-        assert_eq!(board.count_threes("j10".parse()?, Side::Black), 1);
-        Ok(())
-    }
-
-    #[test]
-    fn get_threes() -> Result<()> {
-        let board: Board = "h8g9e11g11e12h12i13e14".parse()?;
-
-        let [a, b, c, d] = board.get_threes("e11".parse()?, Side::Black);
-
-        assert_eq!(a, None);
-        assert_eq!(b, Some("e13".parse()?));
-        assert_eq!(c, None);
-        assert_eq!(d, Some("f10".parse()?));
-        Ok(())
-    }
-
-    #[test]
-    fn is_renju_double_three() -> Result<()> {
-        let board: Board = "h8g9e11g11e12h12i13e14".parse()?;
-
-        assert_eq!(
-            board.is_renju_double_three("e11".parse()?, Side::Black),
-            false
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn test_transforms() {
-        for row in 0..BOARD_SIZE {
-            for col in 0..BOARD_SIZE {
-                let pos = Pos::new(row, col);
-
-                assert_eq!(Board::diag_right(pos), transform_right(pos));
-                assert_eq!(Board::diag_left(pos), transform_left(pos));
-
-                assert_eq!(untransform_right(transform_right(pos)), pos);
-                assert_eq!(untransform_left(transform_left(pos)), pos);
-            }
-        }
-    }
-
-    #[test]
-    fn potential_fours() -> Result<()> {
-        let board: Board = "h8g9e11g11e12h12i13e14".parse()?;
-
-        assert_eq!(board.count_potential_fours("f10".parse()?, Side::Black), 2);
-        Ok(())
-    }
-
-    #[test]
-    fn is_renju_double_three2() -> Result<()> {
-        let board: Board = "h8g9e11e12e14".parse()?;
-
-        assert!(board.is_renju_double_three("e11".parse()?, Side::Black));
-        Ok(())
-    }
-
-    #[test]
-    fn win_not_three() -> Result<()> {
-        let board: Board = "d4e4f4f5f6f7f8".parse()?;
-
-        assert_eq!(board.is_win("f4".parse()?, Side::Black), true);
-        Ok(())
-    }
-
-    #[test]
-    fn place_and_remove() {
-        let mut board: PieceBoard<15> = PieceBoard::new();
-
-        let pos = Pos::new(4, 6);
-        board.set(pos, Square::Piece(Side::Black));
-        assert_eq!(board.at(pos), Square::Piece(Side::Black));
-
-        board.set(pos, Square::Empty);
-        assert_eq!(board.at(pos), Square::Empty);
-    }
-
-    #[test]
-    fn no_double_three() -> Result<()> {
-        let board: Board = "l2m2e7d8b10j2".parse()?;
-
-        let threes = board.get_threes("j2".parse()?, Side::Black);
-        assert_eq!(threes[3], None);
-        assert_eq!(threes[0], Some("k2".parse()?));
-        assert_eq!(threes[1], None);
-        assert_eq!(threes[2], None);
-        Ok(())
-    }
-
-    #[test]
-    fn no_double_three2() -> Result<()> {
-        let board: Board = "d4e5a7b7d7b8d6".parse()?;
-
-        assert_eq!(
-            board.is_renju_double_three("d6".parse()?, Side::Black),
-            false
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn double_four2() -> Result<()> {
-        let board: Board = "d4e5a7b7d7b8d6c7".parse()?;
-
-        assert_eq!(board.count_fours("c7".parse()?, Side::Black), 2);
-        Ok(())
-    }
-
-    #[test]
-    fn double_four3() -> Result<()> {
-        let board: Board = "h11k11i12h13j13k13h14k14h15".parse()?;
-
-        assert_eq!(board.count_fours("h11".parse()?, Side::Black), 2);
-        Ok(())
-    }
-
-    #[test]
-    fn no_double_three3() -> Result<()> {
-        let board: Board = "g8f11g11c12b13d11".parse()?;
-
-        assert_eq!(
-            board.is_renju_double_three("d11".parse()?, Side::Black),
-            false
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn double_three() -> Result<()> {
-        let board: Board = "f10g10h10f12h12g13h13i13g11".parse()?;
-
-        assert_eq!(
-            board.is_renju_double_three("g11".parse()?, Side::Black),
-            true
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn win_not_double_three() -> Result<()> {
-        let board: Board = "f8c9d9e9f9h10j10i11h12".parse()?;
-
-        assert_eq!(
-            board.is_renju_double_three("i11".parse()?, Side::Black),
-            false
-        );
-        Ok(())
-    }
-
-    #[test]
-    fn dont_panic() -> Result<()> {
-        let board: Board = "h8i8j8k8m8".parse()?;
-        assert_eq!(board.count_fours("i8".parse()?, Side::Black), 1);
-        Ok(())
+    fn straight_three() {
+        test_three("g8h8i8", "d8", &[]);
+        test_three("g8h8i8", "e8", &[]);
+        test_three("g8h8i8", "f8", &[]);
+        test_three("g8h8i8", "g8", &["f8", "j8"]);
+        test_three("g8h8i8", "h8", &["f8", "j8"]);
+        test_three("g8h8i8", "i8", &["f8", "j8"]);
+        test_three("g8h8i8", "j8", &[]);
+        test_three("g8h8i8", "k8", &[]);
+        test_three("g8h8i8", "l8", &[]);
+
+        test_three("f8g8h8i8", "c8", &[]);
+        test_three("f8g8h8i8", "d8", &[]);
+        test_three("f8g8h8i8", "e8", &[]);
+        test_three("f8g8h8i8", "f8", &[]);
+        test_three("f8g8h8i8", "g8", &[]);
+        test_three("f8g8h8i8", "h8", &[]);
+        test_three("f8g8h8i8", "i8", &[]);
+        test_three("f8g8h8i8", "j8", &[]);
+        test_three("f8g8h8i8", "k8", &[]);
+        test_three("f8g8h8i8", "l8", &[]);
+        test_three("f8g8h8i8", "m8", &[]);
+
+        test_three("f8g8h8i8k8", "c8", &[]);
+        test_three("f8g8h8i8k8", "d8", &[]);
+        test_three("f8g8h8i8k8", "e8", &[]);
+        test_three("f8g8h8i8k8", "f8", &[]);
+        test_three("f8g8h8i8k8", "g8", &[]);
+        test_three("f8g8h8i8k8", "h8", &[]);
+        test_three("f8g8h8i8k8", "i8", &[]);
+        test_three("f8g8h8i8k8", "j8", &[]);
+        test_three("f8g8h8i8k8", "k8", &[]);
+        test_three("f8g8h8i8k8", "l8", &[]);
+        test_three("f8g8h8i8k8", "m8", &[]);
+
+        test_three("e8g8h8i8", "b8", &[]);
+        test_three("e8g8h8i8", "c8", &[]);
+        test_three("e8g8h8i8", "d8", &[]);
+        test_three("e8g8h8i8", "f8", &[]);
+        test_three("e8g8h8i8", "g8", &[]);
+        test_three("e8g8h8i8", "h8", &[]);
+        test_three("e8g8h8i8", "i8", &[]);
+        test_three("e8g8h8i8", "j8", &[]);
+        test_three("e8g8h8i8", "k8", &[]);
+        test_three("e8g8h8i8", "l8", &[]);
+        test_three("e8g8h8i8", "m8", &[]);
+
+        test_three("g8h8i8k8", "b8", &[]);
+        test_three("g8h8i8k8", "c8", &[]);
+        test_three("g8h8i8k8", "d8", &[]);
+        test_three("g8h8i8k8", "f8", &[]);
+        test_three("g8h8i8k8", "g8", &[]);
+        test_three("g8h8i8k8", "h8", &[]);
+        test_three("g8h8i8k8", "i8", &[]);
+        test_three("g8h8i8k8", "j8", &[]);
+        test_three("g8h8i8k8", "k8", &[]);
+        test_three("g8h8i8k8", "l8", &[]);
+        test_three("g8h8i8k8", "m8", &[]);
+        test_three("g8h8i8k8", "n8", &[]);
+
+        test_three("E8g8h8i8", "d8", &[]);
+        test_three("E8g8h8i8", "e8", &[]);
+        test_three("E8g8h8i8", "f8", &[]);
+        test_three("E8g8h8i8", "g8", &["j8"]);
+        test_three("E8g8h8i8", "h8", &["j8"]);
+        test_three("E8g8h8i8", "i8", &["j8"]);
+        test_three("E8g8h8i8", "j8", &[]);
+        test_three("E8g8h8i8", "k8", &[]);
+        test_three("E8g8h8i8", "l8", &[]);
+
+        test_three("g8h8i8K8", "d8", &[]);
+        test_three("g8h8i8K8", "e8", &[]);
+        test_three("g8h8i8K8", "f8", &[]);
+        test_three("g8h8i8K8", "g8", &["f8"]);
+        test_three("g8h8i8K8", "h8", &["f8"]);
+        test_three("g8h8i8K8", "i8", &["f8"]);
+        test_three("g8h8i8K8", "j8", &[]);
+        test_three("g8h8i8K8", "k8", &[]);
+        test_three("g8h8i8K8", "l8", &[]);
+
+        test_three("g8h8i8l8", "d8", &[]);
+        test_three("g8h8i8l8", "e8", &[]);
+        test_three("g8h8i8l8", "f8", &[]);
+        test_three("g8h8i8l8", "g8", &["f8"]);
+        test_three("g8h8i8l8", "h8", &["f8"]);
+        test_three("g8h8i8l8", "i8", &["f8"]);
+        test_three("g8h8i8l8", "j8", &[]);
+        test_three("g8h8i8l8", "k8", &[]);
+        test_three("g8h8i8l8", "l8", &[]);
+
+        test_three("d8g8h8i8", "d8", &[]);
+        test_three("d8g8h8i8", "e8", &[]);
+        test_three("d8g8h8i8", "f8", &[]);
+        test_three("d8g8h8i8", "g8", &["j8"]);
+        test_three("d8g8h8i8", "h8", &["j8"]);
+        test_three("d8g8h8i8", "i8", &["j8"]);
+        test_three("d8g8h8i8", "j8", &[]);
+        test_three("d8g8h8i8", "k8", &[]);
+        test_three("d8g8h8i8", "l8", &[]);
+
+        test_three("D8g8h8i8", "d8", &[]);
+        test_three("D8g8h8i8", "e8", &[]);
+        test_three("D8g8h8i8", "f8", &[]);
+        test_three("D8g8h8i8", "g8", &["f8", "j8"]);
+        test_three("D8g8h8i8", "h8", &["f8", "j8"]);
+        test_three("D8g8h8i8", "i8", &["f8", "j8"]);
+        test_three("D8g8h8i8", "j8", &[]);
+        test_three("D8g8h8i8", "k8", &[]);
+        test_three("D8g8h8i8", "l8", &[]);
+
+        test_three("g8h8i8L8", "d8", &[]);
+        test_three("g8h8i8L8", "e8", &[]);
+        test_three("g8h8i8L8", "f8", &[]);
+        test_three("g8h8i8L8", "g8", &["f8", "j8"]);
+        test_three("g8h8i8L8", "h8", &["f8", "j8"]);
+        test_three("g8h8i8L8", "i8", &["f8", "j8"]);
+        test_three("g8h8i8L8", "j8", &[]);
+        test_three("g8h8i8L8", "k8", &[]);
+        test_three("g8h8i8L8", "l8", &[]);
+
+        test_three("D8g8h8i8L8", "d8", &[]);
+        test_three("D8g8h8i8L8", "e8", &[]);
+        test_three("D8g8h8i8L8", "f8", &[]);
+        test_three("D8g8h8i8L8", "g8", &["f8", "j8"]);
+        test_three("D8g8h8i8L8", "h8", &["f8", "j8"]);
+        test_three("D8g8h8i8L8", "i8", &["f8", "j8"]);
+        test_three("D8g8h8i8L8", "j8", &[]);
+        test_three("D8g8h8i8L8", "k8", &[]);
+        test_three("D8g8h8i8L8", "l8", &[]);
+        
+        //TODO test with border
     }
 }
