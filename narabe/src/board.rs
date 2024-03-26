@@ -241,11 +241,11 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         }
     }
 
-    fn is_pattern(&self, pos: Pos, side: Side, pattern: u32, len: usize) -> bool {
-        let max = (pos.col()).min(SIZE - len);
-        let min = pos.col().saturating_sub(len - 1);
+    fn is_pattern_impl(idx: usize, string: u32, pattern: u32, len: usize) -> bool {
+        let max = idx.min(SIZE - len);
+        let min = idx.saturating_sub(len - 1);
 
-        let our_row = self.get_row(pos.row(), side);
+        let our_row = string;
         for shift in min..=max {
             let shifted = pattern << shift;
 
@@ -256,12 +256,26 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         false
     }
 
+    fn is_pattern(&self, pos: Pos, side: Side, pattern: u32, len: usize) -> bool {
+        Self::is_pattern_impl(pos.col(), self.get_row(pos.row(), side), pattern, len)
+    }
+
     pub fn is_overline(&self, pos: Pos, side: Side) -> bool {
         self.is_pattern(pos, side, 0b111111, 6)
     }
 
+    //NOTE: does note check for overline
     pub fn is_win(&self, pos: Pos, side: Side) -> bool {
         self.is_pattern(pos, side, 0b11111, 5)
+    }
+
+    pub fn has_piece(&self, pos: Pos, side: Side) -> bool {
+        self.at(pos) == Square::Piece(side)
+    }
+
+    pub fn is_potential_win(&self, pos: Pos, side: Side) -> bool {
+        let our_row = set_bit(self.get_row(pos.row(), side), pos.col(), true);
+        Self::is_pattern_impl(pos.col(), our_row, 0b11111, 5) && !self.has_piece(pos, !side)
     }
 
     // NOTE: this function will probably falsely report a five as a three. This should probably not be a
@@ -620,6 +634,7 @@ impl Board {
         let cnt = threes
             .iter()
             .filter_map(|x| *x)
+            .filter(|pos| !self.is_potential_win(*pos, side))
             .filter(|pos| {
                 self.get_potential_fours(*pos, side)
                     .iter()
@@ -710,6 +725,13 @@ impl Board {
                 Four::BrokenDouble(_, _) => 2,
             })
             .sum()
+    }
+
+    pub fn is_potential_win(&self, pos: Pos, side: Side) -> bool {
+        self.board0.is_potential_win(pos, side)
+            || self.board1.is_potential_win(pos.transpose(), side)
+            || self.board2.is_potential_win(transform_right(pos), side)
+            || self.board3.is_potential_win(transform_left(pos), side)
     }
 
     pub const fn size(&self) -> usize {
@@ -1330,6 +1352,17 @@ mod tests {
 
         assert_eq!(
             board.is_renju_double_three("d11".parse()?, Side::Black),
+            false
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn win_not_double_three() -> Result<()> {
+        let board: Board = "f8c9d9e9f9h10j10i11h12".parse()?;
+
+        assert_eq!(
+            board.is_renju_double_three("i11".parse()?, Side::Black),
             false
         );
         Ok(())
