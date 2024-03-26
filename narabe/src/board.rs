@@ -317,7 +317,7 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
     //..bbbb straight
     fn get_fours_impl(&self, pos: Pos, our_row: u32, their_row: u32) -> Option<Four> {
         debug_assert!(SIZE == BOARD_SIZE || SIZE == DIAG_SIZE);
-        let mask_len = 6;
+        let mask_len = 5;
 
         // detect four by counting missing piece for a five,
         let max = (pos.col()).min(SIZE - mask_len);
@@ -333,6 +333,14 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
 
             let masked_row = our_row & win_mask;
             let missing = masked_row ^ win_mask;
+
+            //println!();
+            //println!("shift={} min={} max={}", shift, min, max);
+            //println!("our row ={:0>32b}", our_row);
+            //println!("win mask={:0>32b}", win_mask);
+            //println!("masked  ={:0>32b}", masked_row);
+            //println!("missing ={:0>32b}", missing);
+            //println!("overline={:0>32b}", overline_mask);
 
             if (their_row & win_mask) == 0
                 && missing.count_ones() == 1
@@ -1291,6 +1299,14 @@ mod tests {
         let board: Board = "d4e5a7b7d7b8d6c7".parse()?;
 
         assert_eq!(board.count_fours("c7".parse()?, Side::Black), 2);
+        Ok(())
+    }
+
+    #[test]
+    fn double_four3() -> Result<()> {
+        let board: Board = "h11k11i12h13j13k13h14k14h15".parse()?;
+
+        assert_eq!(board.count_fours("h11".parse()?, Side::Black), 2);
         Ok(())
     }
 
