@@ -291,7 +291,7 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
     // x.bb.b.x,,,
     // 11111111111
     //
-    // 18 patterns in total:
+    // 15 patterns in total:
     //
     // Straight:
     //      v
@@ -302,6 +302,8 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
     // ,,x..bbb..x
     // ,x..bbb..x,
     // x..bbb..x,,
+    //
+    // (These two patterns are the same)
     //
     // Normal:
     //      V
@@ -335,9 +337,6 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
             0b00011100000,
             0b00001110000,
             0b00000111000,
-            0b00000111000,
-            0b00001110000,
-            0b00011100000,
             0b00011100000,
             0b00001110000,
             0b00000111000,
@@ -356,9 +355,6 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
             0b01100011000,
             0b00110001100,
             0b00011000110,
-            0b00011000110,
-            0b00110001100,
-            0b01100011000,
             0b01100010000,
             0b00110001000,
             0b00011000100,
@@ -377,9 +373,6 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
             0b10000000100,
             0b01000000010,
             0b00100000001,
-            0b00100000001,
-            0b01000000010,
-            0b10000000100,
             0b10000001000,
             0b01000000100,
             0b00100000010,
@@ -398,9 +391,6 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
             Three::Straight(4, 8),
             Three::Straight(3, 7),
             Three::Straight(2, 6),
-            Three::Straight(2, 6),
-            Three::Straight(3, 7),
-            Three::Straight(4, 8),
             Three::Normal(8),
             Three::Normal(7),
             Three::Normal(6),
