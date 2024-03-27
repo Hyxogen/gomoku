@@ -1,5 +1,36 @@
 use std::fmt;
 use std::str;
+use std::ops::{Add, Neg, Sub};
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub struct DeltaPos(i8, i8);
+
+impl DeltaPos { 
+    pub const ZERO: DeltaPos = Self::new(0, 0);
+
+    pub const fn new(drow: i8, dcol: i8) -> Self {
+        Self { 0: drow, 1: dcol }
+    }
+
+    pub const fn drow(&self) -> i8 {
+        self.0
+    }
+
+    pub const fn dcol(&self) -> i8 {
+        self.1
+    }
+}
+
+impl Neg for DeltaPos {
+    type Output = Self;
+
+    fn neg(self) -> Self::Output {
+        Self {
+            0: -self.0,
+            1: -self.1,
+        }
+    }
+}
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct Pos(u8, u8);
@@ -19,6 +50,32 @@ impl Pos {
 
     pub const fn transpose(self) -> Self {
         Pos::new(self.col(), self.row())
+    }
+}
+
+impl Add<DeltaPos> for Pos {
+    type Output = Self;
+
+    fn add(self, rhs: DeltaPos) -> Self::Output {
+        Pos::new((self.row() as i8 + rhs.drow()) as u8, (self.col() as i8 + rhs.dcol()) as u8)
+    }
+}
+
+impl Sub<DeltaPos> for Pos {
+    type Output = Self;
+
+    fn sub(self, rhs: DeltaPos) -> Self::Output {
+        self + -rhs
+    }
+}
+
+impl<T, U> From<(T, U)> for DeltaPos
+where
+    T: Into<i8>,
+    U: Into<i8>,
+{
+    fn from(value: (T, U)) -> Self {
+        Self::new(value.0.into(), value.1.into())
     }
 }
 

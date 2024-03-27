@@ -1,4 +1,7 @@
+use crate::table::*;
 use anyhow::{bail, Error};
+#[cfg(test)]
+use std::collections::HashMap;
 use std::fmt;
 use std::ops::Not;
 use std::str::FromStr;
@@ -226,6 +229,7 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
     pub const SIZEU8: u8 = SIZE as u8;
 
     const NORMAL_BOUNDARY_BOARD: BitBoard<RENJU_BOARD_SIZE> = Board::normal_boundary_board();
+    const DIAGONAL_BOUNDARY_BOARD: BitBoard<RENJU_DIAG_BOARD_SIZE> = Board::diag_boundary_board();
 
     pub const fn new() -> Self {
         Self {
@@ -324,7 +328,12 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
     // ,,,x.bb.b.x
     //
     // For each pattern, there are exactly three places for black stones to be placed
-    const fn get_three_impl(idx: u8, our_row: u64, their_row: u64, border_row: u64) -> Option<Three<u8>> {
+    const fn get_three_impl(
+        idx: u8,
+        our_row: u64,
+        their_row: u64,
+        border_row: u64,
+    ) -> Option<Three<u8>> {
         const MASK: u64 = 0b11111111111;
 
         debug_assert!(idx >= 11);
@@ -424,7 +433,11 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
     pub const fn get_three(&self, pos: Pos, side: Side) -> Option<Three<Pos>> {
         let our_row = self.row_of(pos.row(), side);
         let their_row = self.row_of(pos.row(), side.opposite());
-        let border_row = Self::NORMAL_BOUNDARY_BOARD.row(pos.row());
+        let border_row = if SIZE == RENJU_BOARD_SIZE {
+            Self::NORMAL_BOUNDARY_BOARD.row(pos.row())
+        } else {
+            Self::DIAGONAL_BOUNDARY_BOARD.row(pos.row())
+        };
 
         match Self::get_three_impl(pos.col(), our_row, their_row, border_row) {
             Some(Three::Normal(col)) => Some(Three::Normal(Pos::new(pos.row(), col))),
@@ -492,11 +505,15 @@ impl<const SIZE: usize> FromStr for PieceBoard<SIZE> {
 
 pub const RENJU_BOARD_SIZE: usize = 15;
 pub const RENJU_BOARD_SIZEU8: u8 = RENJU_BOARD_SIZE as u8;
+pub const RENJU_DIAG_BOARD_SIZE: usize = (RENJU_BOARD_SIZE * 2) - 1;
+pub const RENJU_DIAG_BOARD_SIZEU8: u8 = RENJU_DIAG_BOARD_SIZE as u8;
 
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Debug)]
 pub struct Board {
-    board0: PieceBoard<RENJU_BOARD_SIZE>, // row major
-    board1: PieceBoard<RENJU_BOARD_SIZE>, // column major
+    board0: PieceBoard<RENJU_BOARD_SIZE>,      // row major
+    board1: PieceBoard<RENJU_BOARD_SIZE>,      // column major
+    board2: PieceBoard<RENJU_DIAG_BOARD_SIZE>, // left bottom to right top
+    board3: PieceBoard<RENJU_DIAG_BOARD_SIZE>, // left bottom to right top
 }
 
 impl Board {
@@ -506,6 +523,8 @@ impl Board {
         Self {
             board0: PieceBoard::new(),
             board1: PieceBoard::new(),
+            board2: PieceBoard::new(),
+            board3: PieceBoard::new(),
         }
     }
 
@@ -517,28 +536,64 @@ impl Board {
         Pos::new(pos.row(), pos.col() - Self::MARGIN)
     }
 
+    pub const fn transform_rowmajor(pos: Pos) -> Pos {
+        Self::centre(pos)
+    }
+
+    pub const fn untransform_rowmajor(pos: Pos) -> Pos {
+        Self::decentre(pos)
+    }
+
+    pub const fn transform_colmajor(pos: Pos) -> Pos {
+        Self::centre(pos.transpose())
+    }
+
+    pub const fn untransform_colmajor(pos: Pos) -> Pos {
+        Self::decentre(pos).transpose()
+    }
+
     pub const fn set(mut self, pos: Pos, val: Option<Side>) -> Self {
-        self.board0 = self.board0.set(Self::centre(pos), val);
-        self.board1 = self.board1.set(Self::centre(pos.transpose()), val);
+        self.board0 = self.board0.set(Self::transform_rowmajor(pos), val);
+        self.board1 = self.board1.set(Self::transform_colmajor(pos), val);
+        self.board2 = self.board2.set(transform_right(pos), val);
+        self.board3 = self.board3.set(transform_left(pos), val);
         self
     }
 
     pub const fn at(&self, pos: Pos) -> Option<Side> {
-        let pos = Self::centre(pos);
+        let pos = Self::transform_rowmajor(pos);
 
         self.board0.at(pos)
+    }
+
+    pub fn check_self(&self) {
+        for row in 0..RENJU_BOARD_SIZEU8 {
+            for col in 0..RENJU_BOARD_SIZEU8 {
+                let pos = (row, col).into();
+
+                let val = self.board0.at(Self::transform_rowmajor(pos));
+
+                debug_assert_eq!(self.board1.at(Self::transform_colmajor(pos)), val);
+                debug_assert_eq!(self.board2.at(transform_right(pos)), val);
+                debug_assert_eq!(self.board3.at(transform_left(pos)), val);
+            }
+        }
     }
 
     pub fn get_threes(&self, pos: Pos, side: Side) -> [Option<Three<Pos>>; 4] {
         [
             self.board0
-                .get_three(Self::centre(pos), side)
-                .map(|x| x.map(Self::decentre)),
+                .get_three(Self::transform_rowmajor(pos), side)
+                .map(|x| x.map(Self::untransform_rowmajor)),
             self.board1
-                .get_three(Self::centre(pos.transpose()), side)
-                .map(|x| x.map(Self::decentre).map(Pos::transpose)),
-            None,
-            None,
+                .get_three(Self::transform_colmajor(pos), side)
+                .map(|x| x.map(Self::untransform_colmajor)),
+            self.board2
+                .get_three(transform_right(pos), side)
+                .map(|x| x.map(untransform_right)),
+            self.board3
+                .get_three(transform_left(pos), side)
+                .map(|x| x.map(untransform_left)),
         ]
     }
 
@@ -554,12 +609,140 @@ impl Board {
             let mut col = 0;
             while col < RENJU_BOARD_SIZEU8 {
                 let pos = Pos::new(row, col);
-                board = board.set(Self::centre(pos), false);
+                board = board.set(Self::transform_rowmajor(pos), false);
                 col += 1;
             }
             row += 1;
         }
         board
+    }
+
+    //https://math.stackexchange.com/a/733222
+    const fn rot_left(pos: Pos) -> Pos {
+        Pos::new(
+            pos.row() + pos.col(),
+            (RENJU_BOARD_SIZEU8 - 1) - pos.row() + pos.col(),
+        )
+    }
+
+    pub const fn rot_right(pos: Pos) -> Pos {
+        Self::rot_left(pos).transpose()
+    }
+
+    const DIAG_CENTRE_COL: u8 = RENJU_DIAG_BOARD_SIZEU8 / 2;
+
+    const fn squeeze(mut pos: Pos) -> Pos {
+        pos = Pos::new(pos.row(), pos.col() - pos.col() / 2);
+        pos
+    }
+
+    pub const fn transform_right(pos: Pos) -> Pos {
+        Self::centre(Self::squeeze(Self::rot_right(pos)))
+    }
+
+    pub const fn transform_left(mut pos: Pos) -> Pos {
+        Self::centre(Self::squeeze(Self::rot_left(pos)))
+    }
+
+    pub const fn diag_boundary_board() -> BitBoard<RENJU_DIAG_BOARD_SIZE> {
+        let mut board: BitBoard<RENJU_DIAG_BOARD_SIZE> = BitBoard::filled();
+
+        let mut row = 0;
+        while row < RENJU_BOARD_SIZEU8 {
+            let mut col = 0;
+            while col < RENJU_BOARD_SIZEU8 {
+                board = board.set(Self::transform_right(Pos::new(row, col)), false);
+                col += 1;
+            }
+            row += 1;
+        }
+
+        board
+    }
+
+    pub fn transform<F>(&self, f: F) -> Self
+    where
+        F: Fn(Pos) -> Pos
+    {
+        let mut board = Board::new();
+
+        for pos in board.positions() {
+            if let Some(side) = self.at(pos) {
+                board = board.set(f(pos), Some(side));
+            }
+        }
+        board
+    }
+
+    #[cfg(test)]
+    pub fn gen_table<F: Fn(Pos) -> Pos>(f: F) {
+        let mut transformed = HashMap::new();
+        let mut inverse = HashMap::new();
+
+        let mut max_row = 0;
+        let mut max_col = 0;
+
+        for row in 0..RENJU_BOARD_SIZEU8 {
+            for col in 0..RENJU_BOARD_SIZEU8 {
+                let pos = Pos::new(row, col);
+
+                let tpos = f(pos);
+
+                max_row = max_row.max(tpos.row());
+                max_col = max_col.max(tpos.col());
+
+                transformed.insert(pos, tpos);
+                inverse.insert(tpos, pos);
+            }
+        }
+        print!("const TRANSFORM_TABLE: &'static [&'static [Pos]] = &[");
+
+        for row in 0..RENJU_BOARD_SIZEU8 {
+            print!("&[");
+            for col in 0..RENJU_BOARD_SIZEU8 {
+                let pos = Pos::new(row, col);
+                if let Some(tpos) = transformed.get(&pos) {
+                    print!("Pos::new({}, {}),", tpos.row(), tpos.col());
+                } else {
+                    panic!("this should not happen");
+                }
+            }
+            println!("],");
+        }
+        println!("];");
+
+        println!("const INVERSE_TABLE: &'static [&'static [Pos]] = &[");
+        for row in 0..=max_row {
+            print!("&[");
+            for col in 0..=max_col {
+                let pos = Pos::new(row, col);
+                print!("Pos::new(");
+                if let Some(tpos) = inverse.get(&pos) {
+                    print!("{}, {}", tpos.row(), tpos.col());
+                } else {
+                    print!("1000,1000");
+                }
+                print!("),");
+            }
+            println!("],");
+        }
+        println!("];");
+    }
+
+    pub fn positions(&self) -> impl Iterator<Item = Pos> {
+        let size = self.size();
+        std::iter::successors(Some(Pos::new(0, 0)), move |prev| {
+            let next_row = prev.row() + 1;
+            let next_col = prev.col() + 1;
+
+            if next_col < size {
+                Some((prev.row(), next_col).into())
+            } else if next_row < size {
+                Some((next_row, 0).into())
+            } else {
+                None
+            }
+        })
     }
 }
 
@@ -604,9 +787,10 @@ impl fmt::Display for Board {
 #[cfg(test)]
 mod tests {
     use crate::board::{BitBoard, Board, PieceBoard, Side, Three, RENJU_BOARD_SIZEU8};
+    use crate::table::*;
     use anyhow::Result;
     use std::collections::HashSet;
-    use tools::Pos;
+    use tools::{DeltaPos, Pos};
 
     #[test]
     fn place_and_remove_bitboard() {
@@ -661,7 +845,8 @@ mod tests {
             Side::White
         };
 
-        let board: PieceBoard<15> = b.parse().unwrap();
+        let board: Board = b.parse().unwrap();
+        board.check_self();
         assert_eq!(board.at(b.parse().unwrap()), Some(side));
     }
 
@@ -759,7 +944,7 @@ mod tests {
     fn parse_empty_renju_board() {
         let board: Board = "".parse().unwrap();
 
-        //board.check_self();
+        board.check_self();
         for row in 0..RENJU_BOARD_SIZEU8 {
             for col in 0..RENJU_BOARD_SIZEU8 {
                 assert_eq!(board.at((row as u8, col as u8).into()), None);
@@ -934,7 +1119,7 @@ mod tests {
         test_three("D8g8h8i8L8", "j8", &[]);
         test_three("D8g8h8i8L8", "k8", &[]);
         test_three("D8g8h8i8L8", "l8", &[]);
-        
+
         test_three("l8m8n8", "i8", &[]);
         test_three("l8m8n8", "j8", &[]);
         test_three("l8m8n8", "k8", &[]);
@@ -1156,5 +1341,179 @@ mod tests {
         test_three("h3h4h5", "h6", &[]);
         test_three("h3h4h5", "h7", &[]);
         test_three("h3h4h5", "h8", &[]);
+    }
+
+    #[test]
+    fn test_transforms() {
+        for row in 0..RENJU_BOARD_SIZEU8 {
+            for col in 0..RENJU_BOARD_SIZEU8 {
+                let pos = Pos::new(row, col);
+
+                assert_eq!(Board::transform_right(pos), transform_right(pos));
+                assert_eq!(Board::transform_left(pos), transform_left(pos));
+
+                assert_eq!(untransform_right(transform_right(pos)), pos);
+                assert_eq!(untransform_left(transform_left(pos)), pos);
+            }
+        }
+    }
+
+    fn test_three_all_transformed<F>(
+        board: &str,
+        three_pieces: &[&str],
+        four_pos: &[&str],
+        f: F
+    )
+    where
+        F: Fn(Pos) -> Pos
+    {
+        let board = board.parse::<Board>().unwrap().transform(&f);
+
+        let three_pieces: HashSet<Pos> = three_pieces
+            .iter()
+            .map(|x| x.parse::<Pos>().unwrap())
+            .map(&f)
+            .collect();
+        let actual_fours: HashSet<Pos> = four_pos
+            .iter()
+            .map(|x| x.parse::<Pos>().unwrap())
+            .map(&f)
+            .collect();
+
+        for pos in board.positions() {
+            let fours = board
+                .get_threes(pos, Side::Black)
+                .into_iter()
+                .filter_map(std::convert::identity)
+                .flatten()
+                .collect();
+            if three_pieces.contains(&pos) {
+                assert_eq!(actual_fours, fours);
+            } else {
+                assert!(fours.is_empty());
+            }
+        }
+    }
+
+    fn test_three_all(board: &str, three_pieces: &[&str], four_pos: &[&str]) {
+        test_three_all_transformed(board, three_pieces, four_pos, std::convert::identity);
+    }
+
+    #[test]
+    fn diag_three1() {
+        test_three_all("", &[], &[]);
+        test_three_all("h8", &[], &[]);
+        test_three_all("h8i9", &[], &[]);
+        test_three_all("g7h8", &[], &[]);
+
+        test_three_all("g7h8i9", &["g7", "h8", "i9"], &["f6", "j10"]);
+        test_three_all("f6g7h8i9", &[], &[]);
+        test_three_all("g7h8i9j10", &[], &[]);
+        test_three_all("e5g7h8i9", &[], &[]);
+        test_three_all("g7h8i9k11", &[], &[]);
+        test_three_all("E5g7h8i9", &["g7", "h8", "i9"], &["j10"]);
+        test_three_all("g7h8i9K11", &["g7", "h8", "i9"], &["f6"]);
+        test_three_all("D4g7h8i9", &["g7", "h8", "i9"], &["j10", "f6"]);
+        test_three_all("g7h8i9L12", &["g7", "h8", "i9"], &["j10", "f6"]);
+        test_three_all("d4g7h8i9", &["g7", "h8", "i9"], &["j10"]);
+        test_three_all("g7h8i9l12", &["g7", "h8", "i9"], &["f6"]);
+
+        test_three_all("a1b2c3", &[], &[]);
+        test_three_all("m13n14o15", &[], &[]);
+
+        test_three_all("a1b2c3d4", &[], &[]);
+        test_three_all("l12m13n14o15", &[], &[]);
+
+        test_three_all("b2c3d4", &["b2", "c3", "d4"], &["e5"]);
+        test_three_all("l12m13n14", &["l12", "m13", "n14"], &["k11"]);
+
+        test_three_all("b2c3d4e5", &[], &[]);
+        test_three_all("k11l12m13n14", &[], &[]);
+
+        test_three_all("b2c3d4f6", &[], &[]);
+        test_three_all("k11l12m13n14", &[], &[]);
+
+        test_three_all("b2c3d4g7", &[], &[]);
+        test_three_all("i9l12m13n14", &[], &[]);
+
+        test_three_all("b2c3d4G7", &["b2", "c3", "d4"], &["e5"]);
+        test_three_all("I9l12m13n14", &["l12", "m13", "n14"], &["k11"]);
+
+        test_three_all("b2c3d4h8", &["b2", "c3", "d4"], &["e5"]);
+        test_three_all("h8l12m13n14", &["l12", "m13", "n14"], &["k11"]);
+
+        test_three_all("a1", &[], &[]);
+        test_three_all("o1", &[], &[]);
+        test_three_all("a15", &[], &[]);
+        test_three_all("o15", &[], &[]);
+
+        test_three_all("a14b15", &[], &[]);
+        test_three_all("a1b2", &[], &[]);
+        test_three_all("n1o2", &[], &[]);
+        test_three_all("n14o15", &[], &[]);
+
+        test_three_all("a13b14c15", &[], &[]);
+        test_three_all("a1b2c3", &[], &[]);
+        test_three_all("m1n2o3", &[], &[]);
+        test_three_all("m13n14o15", &[], &[]);
+
+        test_three_all("a12b13c14", &[], &[]);
+        test_three_all("b13c14d15", &[], &[]);
+
+        test_three_all("m2n3o4", &[], &[]);
+        test_three_all("l1m2n3", &[], &[]);
+
+        for i in 0..12 {
+            test_three_all_transformed("a1b2c3", &[], &[], |pos| pos + (0, i).into());
+            test_three_all_transformed("a1b2c3", &[], &[], |pos| pos + (i, 0).into());
+
+            test_three_all_transformed("m1n2o3", &[], &[], |pos| pos - (0, i).into());
+            test_three_all_transformed("m1n2o3", &[], &[], |pos| pos + (i, 0).into());
+        }
+
+        for i in 0..10 {
+            test_three_all_transformed("b2c3d4", &["b2", "c3", "d4"], &["e5"], |pos| pos + (0, i).into());
+            test_three_all_transformed("b2c3d4", &["b2", "c3", "d4"], &["e5"], |pos| pos + (i, 0).into());
+
+            test_three_all_transformed("l12m13n14", &["l12", "m13", "n14"], &["k11"], |pos| pos - (0, i).into());
+            test_three_all_transformed("l12m13n14", &["l12", "m13", "n14"], &["k11"], |pos| pos - (i, 0).into());
+        }
+
+        for i in 0..9 {
+            test_three_all_transformed("c3d4e5", &["c3", "d4", "e5"], &["b2", "f6"], |pos| pos + (0, i).into());
+            test_three_all_transformed("c3d4e5", &["c3", "d4", "e5"], &["b2", "f6"], |pos| pos + (i, 0).into());
+            test_three_all_transformed("c3d4e5", &["c3", "d4", "e5"], &["b2", "f6"], |pos| pos + (i, i).into());
+
+            test_three_all_transformed("b2c3d4e5", &[], &[], |pos| pos + (0, i).into());
+            test_three_all_transformed("c3d4e5f6", &[], &[], |pos| pos + (0, i).into());
+            test_three_all_transformed("B2c3d4e5", &[], &[], |pos| pos + (0, i).into());
+            test_three_all_transformed("c3d4e5F6", &[], &[], |pos| pos + (0, i).into());
+            test_three_all_transformed("b2c3d4e5", &[], &[], |pos| pos + (i, 0).into());
+            test_three_all_transformed("c3d4e5f6", &[], &[], |pos| pos + (i, 0).into());
+            test_three_all_transformed("B2c3d4e5", &[], &[], |pos| pos + (i, 0).into());
+            test_three_all_transformed("c3d4e5F6", &[], &[], |pos| pos + (i, 0).into());
+
+            test_three_all_transformed("a1c3d4e5", &[], &[], |pos| pos + (0, i).into());
+            test_three_all_transformed("a1c3d4e5", &[], &[], |pos| pos + (i, 0).into());
+            test_three_all_transformed("a1c3d4e5", &[], &[], |pos| pos + (i, i).into());
+
+            test_three_all_transformed("A1c3d4e5", &["c3", "d4", "e5"], &["f6"], |pos| pos + (0, i).into());
+            test_three_all_transformed("A1c3d4e5", &["c3", "d4", "e5"], &["f6"], |pos| pos + (i, 0).into());
+            test_three_all_transformed("A1c3d4e5", &["c3", "d4", "e5"], &["f6"], |pos| pos + (i, i).into());
+        }
+    }
+
+    #[test]
+    fn test_positions_iter() {
+        let board = Board::new();
+        let a = board.positions().collect();
+
+        let mut b = HashSet::new();
+        for row in 0..board.size() {
+            for col in 0..board.size() {
+                b.insert(Pos::new(row, col));
+            }
+        }
+        assert_eq!(b, a);
     }
 }

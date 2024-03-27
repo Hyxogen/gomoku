@@ -1,4 +1,5 @@
 mod board;
+mod table;
 
 use board::{Board, Side};
 use protocol::{BrainCommand, Field, ManagerCommand, ManagerCommandReader};
