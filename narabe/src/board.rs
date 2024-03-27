@@ -328,7 +328,7 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
     // ,,,x.bb.b.x
     //
     // For each pattern, there are exactly three places for black stones to be placed
-    const fn get_three_impl(
+    fn get_three_impl(
         idx: u8,
         our_row: u64,
         their_row: u64,
@@ -349,9 +349,9 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
             0b00011100000,
             0b00001110000,
             0b00000111000,
-            0b00000101101,
-            0b00010110100,
-            0b00101101000,
+            0b00000101100,
+            0b00010110000,
+            0b00101100000,
             0b00000111000,
             0b00001110000,
             0b00011100000,
@@ -430,7 +430,7 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         None
     }
 
-    pub const fn get_three(&self, pos: Pos, side: Side) -> Option<Three<Pos>> {
+    pub fn get_three(&self, pos: Pos, side: Side) -> Option<Three<Pos>> {
         let our_row = self.row_of(pos.row(), side);
         let their_row = self.row_of(pos.row(), side.opposite());
         let border_row = if SIZE == RENJU_BOARD_SIZE {
@@ -640,7 +640,7 @@ impl Board {
         Self::centre(Self::squeeze(Self::rot_right(pos)))
     }
 
-    pub const fn transform_left(mut pos: Pos) -> Pos {
+    pub const fn transform_left(pos: Pos) -> Pos {
         Self::centre(Self::squeeze(Self::rot_left(pos)))
     }
 
@@ -1341,6 +1341,9 @@ mod tests {
         test_three("h3h4h5", "h6", &[]);
         test_three("h3h4h5", "h7", &[]);
         test_three("h3h4h5", "h8", &[]);
+
+        test_three_all_transposed("g8i8j8", &["g8", "i8", "j8"], &["h8"]);
+        test_three_all_transposed("f8g8i8", &["f8", "g8", "i8"], &["h8"]);
     }
 
     #[test]
@@ -1393,6 +1396,10 @@ mod tests {
                 assert!(fours.is_empty());
             }
         }
+    }
+
+    fn test_three_all_transposed(board: &str, three_pieces: &[&str], four_pos: &[&str]) {
+        test_three_all_transformed(board, three_pieces, four_pos, Pos::transpose);
     }
 
     fn test_three_all(board: &str, three_pieces: &[&str], four_pos: &[&str]) {
