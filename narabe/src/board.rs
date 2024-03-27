@@ -190,6 +190,13 @@ impl<T: Copy> IntoIterator for Three<T> {
     }
 }
 
+#[derive(Copy, Clone, Debug)]
+pub enum Four<T> {
+    Normal(T),
+    Straight(T, T),
+    Double(T, T),
+}
+
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct PieceBoard<const SIZE: usize> {
     pieces: BitBoard<SIZE>,
@@ -442,6 +449,183 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
             )),
             _ => None,
         }
+    }
+
+    // Straight Four Definition:
+    // An unbroken row with four stones ("four") to which you, in two different ways,
+    // can add one more stone to attain five in a row.
+    //
+    // Four Definition:
+    // A row with four stones to which you can add one more stone to attain five in a row.
+    //
+    // All four patterns:
+    // b = black
+    // . = no piece (must NOT be border)
+    // x = no black (may be a border)
+    // , = anything (may be border)
+    //
+    // Straight (exactly two intersections to make a five):
+    // x.bbbb.x
+    //
+    // Normal (only one intersection to make a five):
+    // x.bbbbx
+    // xb.bbbx
+    // xbb.bbx
+    // xbbb.bx
+    // xbbbb.x
+    //
+    // Degenerate (exactly two intersections to make a five):
+    // xb.bbb.bx
+    //
+    // Degenerate patterns:
+    //        V
+    // ,,,,,,xb.bbb.bx
+    // ,,,,xb.bbb.bx,,
+    // ,,,xb.bbb.bx,,,
+    // ,,xb.bbb.bx,,,,
+    // xb.bbb.bx,,,,,,
+    //
+    // Straight patterns:
+    //        V
+    // ,,,,,x.bbbb.x,,
+    // ,,,,x.bbbb.x,,,
+    // ,,,x.bbbb.x,,,,
+    // ,,x.bbbb.x,,,,,
+    //
+    // Normal patterns:
+    //        V
+    // ,,,,,,xbbbb.x,,
+    // ,,,,,xbbbb.x,,,
+    // ,,,,xbbbb.x,,,,
+    // ,,,xbbbb.x,,,,,
+    //        V
+    // ,,,,,,xb.bbbx,,
+    // ,,,,xb.bbbx,,,,
+    // ,,,xb.bbbx,,,,,
+    // ,,xb.bbbx,,,,,,
+    //        V
+    // ,,,,,,xbb.bbx,,
+    // ,,,,,xbb.bbx,,,
+    // ,,,xbb.bbx,,,,,
+    // ,,xbb.bbx,,,,,,
+    //        V
+    // ,,,,,,xbbb.bx,,
+    // ,,,,,xbbb.bx,,,
+    // ,,,,xbbb.bx,,,,
+    // ,,xbbb.bx,,,,,,
+    //        V
+    // ,,,,,,xbbbb.x,,
+    // ,,,,,xbbbb.x,,,
+    // ,,,,xbbbb.x,,,,
+    // ,,,xbbbb.x,,,,,
+    fn get_four_impl(idx: u8, our_row: u64, their_row: u64, border_row: u64) -> Option<Four<u8>> {
+        const MASK: u64 = (1 << 15) - 1;
+        debug_assert!(idx >= 15);
+
+        let offset = idx - 7;
+        let our_row = ((our_row >> offset) & MASK) as u16;
+        let their_row = ((their_row >> offset) & MASK) as u16;
+        let border_row = ((border_row >> offset) & MASK) as u16;
+
+        const FOUR_PATTERNS: &[u16] = &[
+            0b000000010111010,
+            0b000001011101000,
+            0b000010111010000,
+            0b000101110100000,
+            0b010111010000000,
+            0b000000011110000,
+            0b000000111100000,
+            0b000001111000000,
+            0b000011110000000,
+            0b000000011110000,
+            0b000000111100000,
+            0b000001111000000,
+            0b000011110000000,
+            0b000000010111000,
+            0b000001011100000,
+            0b000010111000000,
+            0b000101110000000,
+            0b000000011011000,
+            0b000000110110000,
+            0b000011011000000,
+            0b000110110000000,
+            0b000000011101000,
+            0b000000111010000,
+            0b000001110100000,
+            0b000111010000000,
+            0b000000011110000,
+            0b000000111100000,
+            0b000001111000000,
+            0b000011110000000,
+        ];
+
+        const EMPTY_PATTERNS: &[u16] = &[
+            0b000000001000100,
+            0b000000100010000,
+            0b000001000100000,
+            0b000010001000000,
+            0b001000100000000,
+            0b000000100001000,
+            0b000001000010000,
+            0b000010000100000,
+            0b000100001000000,
+            0b000000000001000,
+            0b000000000010000,
+            0b000000000100000,
+            0b000000001000000,
+            0b000000001000000,
+            0b000000100000000,
+            0b000001000000000,
+            0b000010000000000,
+            0b000000000100000,
+            0b000000001000000,
+            0b000000100000000,
+            0b000001000000000,
+            0b000000000010000,
+            0b000000000100000,
+            0b000000001000000,
+            0b000000100000000,
+            0b000000000001000,
+            0b000000000010000,
+            0b000000000100000,
+            0b000000001000000,
+        ];
+
+        const NO_OURS_PATTERNS: &[u16] = &[
+            0b000000100000001,
+            0b000010000000100,
+            0b000100000001000,
+            0b001000000010000,
+            0b100000001000000,
+            0b000001000000100,
+            0b000010000001000,
+            0b000100000010000,
+            0b001000000100000,
+            0b000000100000100,
+            0b000001000001000,
+            0b000010000010000,
+            0b000100000100000,
+            0b000000100000100,
+            0b000010000010000,
+            0b000100000100000,
+            0b001000001000000,
+            0b000000100000100,
+            0b000001000001000,
+            0b000100000100000,
+            0b001000001000000,
+            0b000000100000100,
+            0b000001000001000,
+            0b000010000010000,
+            0b001000001000000,
+            0b000000100000100,
+            0b000001000001000,
+            0b000010000010000,
+            0b000100000100000,
+        ];
+
+        //const FIVE_OFFSETS: &[Four
+
+        todo!()
     }
 
     //NOTE you should probably not use this
