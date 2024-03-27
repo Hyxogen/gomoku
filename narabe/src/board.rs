@@ -328,12 +328,7 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
     // ,,,x.bb.b.x
     //
     // For each pattern, there are exactly three places for black stones to be placed
-    fn get_three_impl(
-        idx: u8,
-        our_row: u64,
-        their_row: u64,
-        border_row: u64,
-    ) -> Option<Three<u8>> {
+    fn get_three_impl(idx: u8, our_row: u64, their_row: u64, border_row: u64) -> Option<Three<u8>> {
         const MASK: u64 = 0b11111111111;
 
         debug_assert!(idx >= 11);
@@ -662,7 +657,7 @@ impl Board {
 
     pub fn transform<F>(&self, f: F) -> Self
     where
-        F: Fn(Pos) -> Pos
+        F: Fn(Pos) -> Pos,
     {
         let mut board = Board::new();
 
@@ -1344,6 +1339,30 @@ mod tests {
 
         test_three_all_transposed("g8i8j8", &["g8", "i8", "j8"], &["h8"]);
         test_three_all_transposed("f8g8i8", &["f8", "g8", "i8"], &["h8"]);
+
+        test_three_all_transposed("f8g8i8j8", &[], &[]);
+        test_three_all_transposed("f8g8i8j8", &[], &[]);
+
+        test_three_all_transposed("F8g8i8j8", &[], &[]);
+        test_three_all_transposed("f8g8i8J8", &[], &[]);
+
+        test_three_all_transposed("g8i8j8H8", &[], &[]);
+        test_three_all_transposed("f8g8i8H8", &[], &[]);
+
+        test_three_all_transposed("E8g8i8j8", &["g8", "i8", "j8"], &["h8"]);
+        test_three_all_transposed("f8g8i8K8", &["f8", "g8", "i8"], &["h8"]);
+        test_three_all_transposed("E8g8i8j8L8", &["g8", "i8", "j8"], &["h8"]);
+        test_three_all_transposed("D8f8g8i8K8", &["f8", "g8", "i8"], &["h8"]);
+
+        test_three_all_transposed("e8g8i8j8", &[], &[]);
+        test_three_all_transposed("f8g8i8k8", &[], &[]);
+        test_three_all_transposed("e8g8i8j8l8", &[], &[]);
+        test_three_all_transposed("d8f8g8i8k8", &[], &[]);
+
+        test_three_all_transposed("d8g8i8j8", &["g8", "i8", "j8"], &["h8"]);
+        test_three_all_transposed("f8g8i8l8", &["f8", "g8", "i8"], &["h8"]);
+        test_three_all_transposed("d8g8i8j8m8", &["g8", "i8", "j8"], &["h8"]);
+        test_three_all_transposed("c8f8g8i8l8", &["f8", "g8", "i8"], &["h8"]);
     }
 
     #[test]
@@ -1361,14 +1380,9 @@ mod tests {
         }
     }
 
-    fn test_three_all_transformed<F>(
-        board: &str,
-        three_pieces: &[&str],
-        four_pos: &[&str],
-        f: F
-    )
+    fn test_three_all_transformed<F>(board: &str, three_pieces: &[&str], four_pos: &[&str], f: F)
     where
-        F: Fn(Pos) -> Pos
+        F: Fn(Pos) -> Pos,
     {
         let board = board.parse::<Board>().unwrap().transform(&f);
 
@@ -1399,114 +1413,170 @@ mod tests {
     }
 
     fn test_three_all_transposed(board: &str, three_pieces: &[&str], four_pos: &[&str]) {
+        test_three_all_transformed(board, three_pieces, four_pos, std::convert::identity);
         test_three_all_transformed(board, three_pieces, four_pos, Pos::transpose);
     }
 
-    fn test_three_all(board: &str, three_pieces: &[&str], four_pos: &[&str]) {
+    fn test_three_all_transformed_flipped<F>(
+        board: &str,
+        three_pieces: &[&str],
+        four_pos: &[&str],
+        f: F,
+    ) where
+        F: Fn(Pos) -> Pos,
+    {
+        test_three_all_transformed(board, three_pieces, four_pos, &f);
+        test_three_all_transformed(board, three_pieces, four_pos, |pos| {
+            let pos = f(pos);
+            Pos::new((RENJU_BOARD_SIZEU8 - 1) - pos.row(), pos.col())
+        });
+    }
+
+    fn test_three_all_flipped(board: &str, three_pieces: &[&str], four_pos: &[&str]) {
         test_three_all_transformed(board, three_pieces, four_pos, std::convert::identity);
+        test_three_all_transformed(board, three_pieces, four_pos, |pos| {
+            Pos::new((RENJU_BOARD_SIZEU8 - 1) - pos.row(), pos.col())
+        });
     }
 
     #[test]
     fn diag_three1() {
-        test_three_all("", &[], &[]);
-        test_three_all("h8", &[], &[]);
-        test_three_all("h8i9", &[], &[]);
-        test_three_all("g7h8", &[], &[]);
+        test_three_all_flipped("", &[], &[]);
+        test_three_all_flipped("h8", &[], &[]);
+        test_three_all_flipped("h8i9", &[], &[]);
+        test_three_all_flipped("g7h8", &[], &[]);
 
-        test_three_all("g7h8i9", &["g7", "h8", "i9"], &["f6", "j10"]);
-        test_three_all("f6g7h8i9", &[], &[]);
-        test_three_all("g7h8i9j10", &[], &[]);
-        test_three_all("e5g7h8i9", &[], &[]);
-        test_three_all("g7h8i9k11", &[], &[]);
-        test_three_all("E5g7h8i9", &["g7", "h8", "i9"], &["j10"]);
-        test_three_all("g7h8i9K11", &["g7", "h8", "i9"], &["f6"]);
-        test_three_all("D4g7h8i9", &["g7", "h8", "i9"], &["j10", "f6"]);
-        test_three_all("g7h8i9L12", &["g7", "h8", "i9"], &["j10", "f6"]);
-        test_three_all("d4g7h8i9", &["g7", "h8", "i9"], &["j10"]);
-        test_three_all("g7h8i9l12", &["g7", "h8", "i9"], &["f6"]);
+        test_three_all_flipped("g7h8i9", &["g7", "h8", "i9"], &["f6", "j10"]);
+        test_three_all_flipped("f6g7h8i9", &[], &[]);
+        test_three_all_flipped("g7h8i9j10", &[], &[]);
+        test_three_all_flipped("e5g7h8i9", &[], &[]);
+        test_three_all_flipped("g7h8i9k11", &[], &[]);
+        test_three_all_flipped("E5g7h8i9", &["g7", "h8", "i9"], &["j10"]);
+        test_three_all_flipped("g7h8i9K11", &["g7", "h8", "i9"], &["f6"]);
+        test_three_all_flipped("D4g7h8i9", &["g7", "h8", "i9"], &["j10", "f6"]);
+        test_three_all_flipped("g7h8i9L12", &["g7", "h8", "i9"], &["j10", "f6"]);
+        test_three_all_flipped("d4g7h8i9", &["g7", "h8", "i9"], &["j10"]);
+        test_three_all_flipped("g7h8i9l12", &["g7", "h8", "i9"], &["f6"]);
 
-        test_three_all("a1b2c3", &[], &[]);
-        test_three_all("m13n14o15", &[], &[]);
+        test_three_all_flipped("a1b2c3", &[], &[]);
+        test_three_all_flipped("m13n14o15", &[], &[]);
 
-        test_three_all("a1b2c3d4", &[], &[]);
-        test_three_all("l12m13n14o15", &[], &[]);
+        test_three_all_flipped("a1b2c3d4", &[], &[]);
+        test_three_all_flipped("l12m13n14o15", &[], &[]);
 
-        test_three_all("b2c3d4", &["b2", "c3", "d4"], &["e5"]);
-        test_three_all("l12m13n14", &["l12", "m13", "n14"], &["k11"]);
+        test_three_all_flipped("b2c3d4", &["b2", "c3", "d4"], &["e5"]);
+        test_three_all_flipped("l12m13n14", &["l12", "m13", "n14"], &["k11"]);
 
-        test_three_all("b2c3d4e5", &[], &[]);
-        test_three_all("k11l12m13n14", &[], &[]);
+        test_three_all_flipped("b2c3d4e5", &[], &[]);
+        test_three_all_flipped("k11l12m13n14", &[], &[]);
 
-        test_three_all("b2c3d4f6", &[], &[]);
-        test_three_all("k11l12m13n14", &[], &[]);
+        test_three_all_flipped("b2c3d4f6", &[], &[]);
+        test_three_all_flipped("k11l12m13n14", &[], &[]);
 
-        test_three_all("b2c3d4g7", &[], &[]);
-        test_three_all("i9l12m13n14", &[], &[]);
+        test_three_all_flipped("b2c3d4g7", &[], &[]);
+        test_three_all_flipped("i9l12m13n14", &[], &[]);
 
-        test_three_all("b2c3d4G7", &["b2", "c3", "d4"], &["e5"]);
-        test_three_all("I9l12m13n14", &["l12", "m13", "n14"], &["k11"]);
+        test_three_all_flipped("b2c3d4G7", &["b2", "c3", "d4"], &["e5"]);
+        test_three_all_flipped("I9l12m13n14", &["l12", "m13", "n14"], &["k11"]);
 
-        test_three_all("b2c3d4h8", &["b2", "c3", "d4"], &["e5"]);
-        test_three_all("h8l12m13n14", &["l12", "m13", "n14"], &["k11"]);
+        test_three_all_flipped("b2c3d4h8", &["b2", "c3", "d4"], &["e5"]);
+        test_three_all_flipped("h8l12m13n14", &["l12", "m13", "n14"], &["k11"]);
 
-        test_three_all("a1", &[], &[]);
-        test_three_all("o1", &[], &[]);
-        test_three_all("a15", &[], &[]);
-        test_three_all("o15", &[], &[]);
+        test_three_all_flipped("a1", &[], &[]);
+        test_three_all_flipped("o1", &[], &[]);
+        test_three_all_flipped("a15", &[], &[]);
+        test_three_all_flipped("o15", &[], &[]);
 
-        test_three_all("a14b15", &[], &[]);
-        test_three_all("a1b2", &[], &[]);
-        test_three_all("n1o2", &[], &[]);
-        test_three_all("n14o15", &[], &[]);
+        test_three_all_flipped("a14b15", &[], &[]);
+        test_three_all_flipped("a1b2", &[], &[]);
+        test_three_all_flipped("n1o2", &[], &[]);
+        test_three_all_flipped("n14o15", &[], &[]);
 
-        test_three_all("a13b14c15", &[], &[]);
-        test_three_all("a1b2c3", &[], &[]);
-        test_three_all("m1n2o3", &[], &[]);
-        test_three_all("m13n14o15", &[], &[]);
+        test_three_all_flipped("a13b14c15", &[], &[]);
+        test_three_all_flipped("a1b2c3", &[], &[]);
+        test_three_all_flipped("m1n2o3", &[], &[]);
+        test_three_all_flipped("m13n14o15", &[], &[]);
 
-        test_three_all("a12b13c14", &[], &[]);
-        test_three_all("b13c14d15", &[], &[]);
+        test_three_all_flipped("a12b13c14", &[], &[]);
+        test_three_all_flipped("b13c14d15", &[], &[]);
 
-        test_three_all("m2n3o4", &[], &[]);
-        test_three_all("l1m2n3", &[], &[]);
+        test_three_all_flipped("m2n3o4", &[], &[]);
+        test_three_all_flipped("l1m2n3", &[], &[]);
+
+        test_three_all_flipped("g7i9j10", &["g7", "i9", "j10"], &["h8"]);
+        test_three_all_flipped("f6g7i9", &["f6", "g7", "i9"], &["h8"]);
 
         for i in 0..12 {
-            test_three_all_transformed("a1b2c3", &[], &[], |pos| pos + (0, i).into());
-            test_three_all_transformed("a1b2c3", &[], &[], |pos| pos + (i, 0).into());
+            test_three_all_transformed_flipped("a1b2c3", &[], &[], |pos| pos + (0, i).into());
+            test_three_all_transformed_flipped("a1b2c3", &[], &[], |pos| pos + (i, 0).into());
 
-            test_three_all_transformed("m1n2o3", &[], &[], |pos| pos - (0, i).into());
-            test_three_all_transformed("m1n2o3", &[], &[], |pos| pos + (i, 0).into());
+            test_three_all_transformed_flipped("m1n2o3", &[], &[], |pos| pos - (0, i).into());
+            test_three_all_transformed_flipped("m1n2o3", &[], &[], |pos| pos + (i, 0).into());
         }
 
         for i in 0..10 {
-            test_three_all_transformed("b2c3d4", &["b2", "c3", "d4"], &["e5"], |pos| pos + (0, i).into());
-            test_three_all_transformed("b2c3d4", &["b2", "c3", "d4"], &["e5"], |pos| pos + (i, 0).into());
-
-            test_three_all_transformed("l12m13n14", &["l12", "m13", "n14"], &["k11"], |pos| pos - (0, i).into());
-            test_three_all_transformed("l12m13n14", &["l12", "m13", "n14"], &["k11"], |pos| pos - (i, 0).into());
+            test_three_all_transformed_flipped("b2c3d4", &["b2", "c3", "d4"], &["e5"], |pos| {
+                pos + (0, i).into()
+            });
+            test_three_all_transformed_flipped("b2c3d4", &["b2", "c3", "d4"], &["e5"], |pos| {
+                pos + (i, 0).into()
+            });
+            test_three_all_transformed_flipped(
+                "l12m13n14",
+                &["l12", "m13", "n14"],
+                &["k11"],
+                |pos| pos - (0, i).into(),
+            );
+            test_three_all_transformed_flipped(
+                "l12m13n14",
+                &["l12", "m13", "n14"],
+                &["k11"],
+                |pos| pos - (i, 0).into(),
+            );
         }
 
         for i in 0..9 {
-            test_three_all_transformed("c3d4e5", &["c3", "d4", "e5"], &["b2", "f6"], |pos| pos + (0, i).into());
-            test_three_all_transformed("c3d4e5", &["c3", "d4", "e5"], &["b2", "f6"], |pos| pos + (i, 0).into());
-            test_three_all_transformed("c3d4e5", &["c3", "d4", "e5"], &["b2", "f6"], |pos| pos + (i, i).into());
+            test_three_all_transformed_flipped(
+                "c3d4e5",
+                &["c3", "d4", "e5"],
+                &["b2", "f6"],
+                |pos| pos + (0, i).into(),
+            );
+            test_three_all_transformed_flipped(
+                "c3d4e5",
+                &["c3", "d4", "e5"],
+                &["b2", "f6"],
+                |pos| pos + (i, 0).into(),
+            );
+            test_three_all_transformed_flipped(
+                "c3d4e5",
+                &["c3", "d4", "e5"],
+                &["b2", "f6"],
+                |pos| pos + (i, i).into(),
+            );
 
-            test_three_all_transformed("b2c3d4e5", &[], &[], |pos| pos + (0, i).into());
-            test_three_all_transformed("c3d4e5f6", &[], &[], |pos| pos + (0, i).into());
-            test_three_all_transformed("B2c3d4e5", &[], &[], |pos| pos + (0, i).into());
-            test_three_all_transformed("c3d4e5F6", &[], &[], |pos| pos + (0, i).into());
-            test_three_all_transformed("b2c3d4e5", &[], &[], |pos| pos + (i, 0).into());
-            test_three_all_transformed("c3d4e5f6", &[], &[], |pos| pos + (i, 0).into());
-            test_three_all_transformed("B2c3d4e5", &[], &[], |pos| pos + (i, 0).into());
-            test_three_all_transformed("c3d4e5F6", &[], &[], |pos| pos + (i, 0).into());
+            test_three_all_transformed_flipped("b2c3d4e5", &[], &[], |pos| pos + (0, i).into());
+            test_three_all_transformed_flipped("c3d4e5f6", &[], &[], |pos| pos + (0, i).into());
+            test_three_all_transformed_flipped("B2c3d4e5", &[], &[], |pos| pos + (0, i).into());
+            test_three_all_transformed_flipped("c3d4e5F6", &[], &[], |pos| pos + (0, i).into());
+            test_three_all_transformed_flipped("b2c3d4e5", &[], &[], |pos| pos + (i, 0).into());
+            test_three_all_transformed_flipped("c3d4e5f6", &[], &[], |pos| pos + (i, 0).into());
+            test_three_all_transformed_flipped("B2c3d4e5", &[], &[], |pos| pos + (i, 0).into());
+            test_three_all_transformed_flipped("c3d4e5F6", &[], &[], |pos| pos + (i, 0).into());
 
-            test_three_all_transformed("a1c3d4e5", &[], &[], |pos| pos + (0, i).into());
-            test_three_all_transformed("a1c3d4e5", &[], &[], |pos| pos + (i, 0).into());
-            test_three_all_transformed("a1c3d4e5", &[], &[], |pos| pos + (i, i).into());
+            test_three_all_transformed_flipped("a1c3d4e5", &[], &[], |pos| pos + (0, i).into());
+            test_three_all_transformed_flipped("a1c3d4e5", &[], &[], |pos| pos + (i, 0).into());
+            test_three_all_transformed_flipped("a1c3d4e5", &[], &[], |pos| pos + (i, i).into());
 
-            test_three_all_transformed("A1c3d4e5", &["c3", "d4", "e5"], &["f6"], |pos| pos + (0, i).into());
-            test_three_all_transformed("A1c3d4e5", &["c3", "d4", "e5"], &["f6"], |pos| pos + (i, 0).into());
-            test_three_all_transformed("A1c3d4e5", &["c3", "d4", "e5"], &["f6"], |pos| pos + (i, i).into());
+            test_three_all_transformed_flipped("A1c3d4e5", &["c3", "d4", "e5"], &["f6"], |pos| {
+                pos + (0, i).into()
+            });
+            test_three_all_transformed_flipped("A1c3d4e5", &["c3", "d4", "e5"], &["f6"], |pos| {
+                pos + (i, 0).into()
+            });
+            test_three_all_transformed_flipped("A1c3d4e5", &["c3", "d4", "e5"], &["f6"], |pos| {
+                pos + (i, i).into()
+            });
         }
     }
 
