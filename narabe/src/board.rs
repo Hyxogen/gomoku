@@ -1122,8 +1122,8 @@ impl Board {
         println!("];");
     }
 
-    pub fn flip_horizontal(&self) -> Self {
-        self.transform(|pos| Pos::new(pos.row(), self.size() - pos.col() - 1))
+    pub fn flip(&self) -> Self {
+        self.transform(|pos| Pos::new(self.size() - pos.row() - 1, self.size() - pos.col() - 1))
     }
 
     pub fn positions(&self) -> impl Iterator<Item = Pos> {
@@ -2085,30 +2085,11 @@ mod tests {
 
     fn check_fours(board: &Board, fours: &Board, fives: &Board) {
         check_fours_impl(board, fours, fives);
-        check_fours_impl(
-            &board.flip_horizontal(),
-            &fours.flip_horizontal(),
-            &fives.flip_horizontal(),
-        );
+        check_fours_impl(&board.flip(), &fours.flip(), &fives.flip());
     }
 
     fn test_four_pattern(pattern: &str, len: u8, fours: &str, fives: &str) {
-        let max = RENJU_BOARD_SIZEU8 - len;
-
-        let mut board: Board = pattern.parse().unwrap();
-        let mut fours: Board = fours.parse().unwrap();
-        let mut fives: Board = fives.parse().unwrap();
-
-        for i in 0..=max {
-            println!("i={}", i);
-            check_fours(&board, &fours, &fives);
-
-            if i < max {
-                board = board.transform(|pos| Pos::new(pos.row(), pos.col() + 1));
-                fours = fours.transform(|pos| Pos::new(pos.row(), pos.col() + 1));
-                fives = fives.transform(|pos| Pos::new(pos.row(), pos.col() + 1));
-            }
-        }
+        test_four_pattern_box(pattern, len, RENJU_BOARD_SIZEU8, fours, fives);
     }
 
     #[test]
@@ -2153,5 +2134,78 @@ mod tests {
         test_four_pattern("a8b8d8e8", 5, "a8b8d8e8", "c8");
         test_four_pattern("a8b8C8d8e8", 5, "", "");
         test_four_pattern("a8b8c8d8e8", 5, "", "");
+    }
+
+    fn test_four_pattern_box(pattern: &str, width: u8, height: u8, fours: &str, fives: &str) {
+        let max_col = RENJU_BOARD_SIZEU8 - width;
+        let max_row = RENJU_BOARD_SIZEU8 - height;
+
+        let mut board: Board = pattern.parse().unwrap();
+        let mut fours: Board = fours.parse().unwrap();
+        let mut fives: Board = fives.parse().unwrap();
+
+        let shift_right = |pos: Pos| -> Pos { Pos::new(pos.row(), pos.col() + 1) };
+        let shift_down_and_reset =
+            |pos: Pos| -> Pos { Pos::new(pos.row() + 1, pos.col() - max_col) };
+
+        for row in 0..=max_row {
+            for col in 0..=max_col {
+                check_fours(&board, &fours, &fives);
+                if col < max_col {
+                    board = board.transform(shift_right);
+                    fours = fours.transform(shift_right);
+                    fives = fives.transform(shift_right);
+                }
+            }
+            if row < max_row {
+                board = board.transform(shift_down_and_reset);
+                fours = fours.transform(shift_down_and_reset);
+                fives = fives.transform(shift_down_and_reset);
+            }
+        }
+    }
+
+    #[test]
+    fn test_diag_fours_none() {
+        test_four_pattern_box("a1", 1, 1, "", "");
+        test_four_pattern_box("a1b2", 2, 2, "", "");
+        test_four_pattern_box("a1b2c3", 3, 3, "", "");
+    }
+
+    #[test]
+    fn test_diag_fours_straight() {
+        test_four_pattern_box("b2c3d4e5", 6, 6, "b2c3d4e5", "a1f6");
+        test_four_pattern_box("a1b2c3d4e5", 6, 6, "", "");
+        test_four_pattern_box("a1b2c3d4e5f6", 6, 6, "", "");
+
+        test_four_pattern_box("A1c3d4e5f6", 7, 7, "c3d4e5f6", "b2g7");
+        test_four_pattern_box("A1c3d4e5f6H8", 9, 9, "c3d4e5f6", "b2g7");
+
+        test_four_pattern_box("a1c3d4e5f6", 7, 7, "c3d4e5f6", "g7");
+        test_four_pattern_box("a1c3d4e5f6h8", 9, 9, "", "");
+    }
+
+    #[test]
+    fn test_diag_fours_degenerate() {
+        test_four_pattern_box("a1c3d4e5g7", 7, 7, "a1c3d4e5g7", "b2f6");
+        test_four_pattern_box("a1B2c3d4e5g7", 7, 7, "c3d4e5g7", "f6");
+        test_four_pattern_box("a1B2c3d4e5f6g7", 7, 7, "", "");
+        test_four_pattern_box("a1b2c3d4e5g7", 7, 7, "", "");
+        test_four_pattern_box("a1b2c3d4e5f6g7", 7, 7, "", "");
+    }
+
+    #[test]
+    fn test_diag_fours_normal() {
+        test_four_pattern_box("A1b2c3d4e5", 6, 6, "b2c3d4e5", "f6");
+        test_four_pattern_box("A1b2c3d4e5G7", 7, 7, "b2c3d4e5", "f6");
+        test_four_pattern_box("A1b2c3d4e5g7", 7, 7, "", "");
+
+        test_four_pattern_box("a1c3d4e5", 5, 5, "a1c3d4e5", "b2");
+        test_four_pattern_box("a1B2c3d4e5", 5, 5, "", "");
+        test_four_pattern_box("a1b2c3d4e5", 5, 5, "", "");
+        test_four_pattern_box("a1c3d4e5f6", 7, 7, "c3d4e5f6", "g7");
+
+        test_four_pattern_box("a1b2d4e5", 5, 5, "a1b2d4e5", "c3");
+        test_four_pattern_box("a1b2C3d4e5", 5, 5, "", "");
     }
 }
