@@ -779,6 +779,7 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         debug_assert_eq!(EMPTY_PATTERNS.len(), NO_OURS_PATTERNS.len());
         debug_assert_eq!(NO_OURS_PATTERNS.len(), FIVE_OFFSETS.len());
 
+        //TODO: check if better optimized with lazy iterators
         let mut i = 0;
         while i < FOUR_PATTERNS.len() {
             if (our_row & FOUR_PATTERNS[i]) == FOUR_PATTERNS[i]
@@ -816,6 +817,88 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
             )),
             _ => None,
         }
+    }
+
+    // Possible patterns
+    //
+    // xbbbbbx
+    //      v
+    // xbbbbbx,,,,
+    // ,xbbbbbx,,,
+    // ,,xbbbbbx,,
+    // ,,,xbbbbbx,
+    // ,,,,xbbbbbx
+    fn is_win_no_overline_impl(string: u64, idx: u8) -> bool {
+        const MASK: u64 = (1 << 11) - 1;
+        debug_assert!(idx >= 11);
+
+        let offset = idx - 5;
+        let string = ((string >> offset) & MASK) as u16;
+
+        const WIN_PATTERNS: &[u16] = &[
+            0b01111100000,
+            0b00111110000,
+            0b00011111000,
+            0b00001111100,
+            0b00000111110,
+        ];
+
+        const NO_OURS_PATTERNS: &[u16] = &[
+            0b10000010000,
+            0b01000001000,
+            0b00100000100,
+            0b00010000010,
+            0b00001000001,
+        ];
+
+        WIN_PATTERNS
+            .iter()
+            .zip(NO_OURS_PATTERNS.iter())
+            .any(|(win, empty)| ((string & win) == *win) && ((string & empty) == 0))
+    }
+
+    // Possible patterns
+    //
+    // bbbbbb
+    //      v
+    // bbbbbb,,,,,
+    // ,bbbbbb,,,,
+    // ,,bbbbbb,,,
+    // ,,,bbbbbb,,
+    // ,,,,bbbbbb,
+    // ,,,,,bbbbbb
+    fn is_overline_impl(string: u64, idx: u8) -> bool {
+        const MASK: u64 = (1 << 11) - 1;
+        debug_assert!(idx >= 5);
+
+        let offset = idx - 5;
+        let string = ((string >> offset) & MASK) as u16;
+
+        const OVERLINE_PATTERNS: &[u16] = &[
+            0b11111100000,
+            0b01111110000,
+            0b00111111000,
+            0b00011111100,
+            0b00001111110,
+            0b00000111111,
+        ];
+
+        for pattern in OVERLINE_PATTERNS {
+            if (string & pattern) == *pattern {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn is_win_no_overline(&self, pos: Pos, side: Side) -> bool {
+        let string = self.row_of(pos.row(), side);
+        Self::is_win_no_overline_impl(string, pos.col())
+    }
+
+    pub fn is_overline(&self, pos: Pos, side: Side) -> bool {
+        let string = self.row_of(pos.row(), side);
+        Self::is_overline_impl(string, pos.col())
     }
 
     //NOTE you should probably not use this
@@ -985,6 +1068,26 @@ impl Board {
                 .get_four(transform_left(pos), side)
                 .map(|x| x.map(untransform_left)),
         ]
+    }
+
+    pub fn is_win_no_overline(&self, pos: Pos, side: Side) -> bool {
+        self.board0
+            .is_win_no_overline(Self::transform_rowmajor(pos), side)
+            | self
+                .board1
+                .is_win_no_overline(Self::transform_colmajor(pos), side)
+            | self.board2.is_win_no_overline(transform_right(pos), side)
+            | self.board3.is_win_no_overline(transform_left(pos), side)
+    }
+
+    pub fn is_overline(&self, pos: Pos, side: Side) -> bool {
+        self.board0
+            .is_overline(Self::transform_rowmajor(pos), side)
+            | self
+                .board1
+                .is_overline(Self::transform_colmajor(pos), side)
+            | self.board2.is_overline(transform_right(pos), side)
+            | self.board3.is_overline(transform_left(pos), side)
     }
 
     pub const fn size(&self) -> u8 {
@@ -2207,5 +2310,60 @@ mod tests {
 
         test_four_pattern_box("a1b2d4e5", 5, 5, "a1b2d4e5", "c3");
         test_four_pattern_box("a1b2C3d4e5", 5, 5, "", "");
+    }
+
+    fn test_pattern<F>(board: &str, places: &str, f: F)
+    where
+        F: Fn(&Board, Pos, Side) -> bool
+    {
+        let board: Board = board.parse().unwrap();
+        let places: Board = places.parse().unwrap();
+
+        for (pos, square) in places.squares() {
+            println!("pos={}", pos);
+            if let Some(side) = square {
+                assert_eq!(f(&board, pos, side), true);
+                assert_eq!(f(&board, pos, !side), false);
+            } else {
+                assert_eq!(f(&board, pos, Side::Black), false);
+                assert_eq!(f(&board, pos, Side::White), false);
+            }
+        }
+    }
+
+    fn test_win_no_overline(board: &str, five: &str) {
+        test_pattern(board, five, Board::is_win_no_overline);
+    }
+
+    #[test]
+    fn win_no_overline() {
+        test_win_no_overline("", "");
+        test_win_no_overline("a8", "");
+        test_win_no_overline("a8b8", "");
+        test_win_no_overline("a8b8c8", "");
+        test_win_no_overline("a8b8c8d8", "");
+        test_win_no_overline("a8b8c8d8e8", "a8b8c8d8e8");
+        test_win_no_overline("a8b8c8d8e8f8", "");
+        test_win_no_overline("h8i8j8k8l8", "h8i8j8k8l8");
+
+        test_win_no_overline("b8c8d8e8f8", "b8c8d8e8f8");
+    }
+
+    fn test_overline(board: &str, five: &str) {
+        test_pattern(board, five, Board::is_overline);
+    }
+
+    #[test]
+    fn overline() {
+        test_overline("a8b8c8d8e8f8", "a8b8c8d8e8f8");
+        test_overline("", "");
+        test_overline("a8", "");
+        test_overline("a8b8", "");
+        test_overline("a8b8c8", "");
+        test_overline("a8b8c8d8", "");
+        test_overline("a8b8c8d8e8", "");
+
+        test_overline("b8c8d8e8f8", "");
+
     }
 }
