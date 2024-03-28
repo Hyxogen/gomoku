@@ -197,6 +197,89 @@ pub enum Four<T> {
     Double(T, T),
 }
 
+impl<T> PartialEq for Four<T>
+where
+    T: PartialEq<T>,
+{
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Normal(a), Self::Normal(b)) => a == b,
+            (Self::Straight(a1, a2), Self::Straight(b1, b2))
+            | (Self::Double(a1, a2), Self::Double(b1, b2)) => {
+                (a1 == b1 && a2 == b2) || (a1 == b2 && a2 == b1)
+            }
+            _ => false,
+        }
+    }
+}
+
+impl<T> Eq for Four<T> where T: PartialEq<T> {}
+
+impl Four<u8> {
+    pub const fn add(self, v: u8) -> Self {
+        match self {
+            Self::Straight(a, b) => Self::Straight(a + v, b + v),
+            Self::Double(a, b) => Self::Double(a + v, b + v),
+            Self::Normal(a) => Self::Normal(a + v),
+        }
+    }
+}
+
+impl<T> Four<T> {
+    pub fn map<F>(self, f: F) -> Self
+    where
+        F: Fn(T) -> T,
+    {
+        match self {
+            Self::Normal(a) => Self::Normal(f(a)),
+            Self::Straight(a, b) => Self::Straight(f(a), f(b)),
+            Self::Double(a, b) => Self::Double(f(a), f(b)),
+        }
+    }
+}
+
+pub struct FourIter<T> {
+    inner: Four<T>,
+    idx: u8,
+}
+
+impl<T: Copy> FourIter<T> {
+    pub const fn new(inner: Four<T>) -> Self {
+        Self { inner, idx: 0 }
+    }
+}
+
+impl<T: Copy> Iterator for FourIter<T> {
+    type Item = T;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.inner {
+            Four::Normal(a) if self.idx == 0 => {
+                self.idx += 1;
+                Some(a)
+            }
+            Four::Straight(a, _) | Four::Double(a, _) if self.idx == 0 => {
+                self.idx += 1;
+                Some(a)
+            }
+            Four::Straight(_, b) | Four::Double(_, b) if self.idx == 1 => {
+                self.idx += 1;
+                Some(b)
+            }
+            _ => None,
+        }
+    }
+}
+
+impl<T: Copy> IntoIterator for Four<T> {
+    type Item = <FourIter<T> as Iterator>::Item;
+    type IntoIter = FourIter<T>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        FourIter::new(self)
+    }
+}
+
 #[derive(Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct PieceBoard<const SIZE: usize> {
     pieces: BitBoard<SIZE>,
@@ -514,10 +597,10 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
     // ,,,,xbbb.bx,,,,
     // ,,xbbb.bx,,,,,,
     //        V
-    // ,,,,,,xbbbb.x,,
-    // ,,,,,xbbbb.x,,,
-    // ,,,,xbbbb.x,,,,
-    // ,,,xbbbb.x,,,,,
+    // ,,,,,x.bbbbx,,,
+    // ,,,,x.bbbbx,,,,
+    // ,,,x.bbbbx,,,,,
+    // ,,x.bbbbx,,,,,,
     fn get_four_impl(idx: u8, our_row: u64, their_row: u64, border_row: u64) -> Option<Four<u8>> {
         const MASK: u64 = (1 << 15) - 1;
         debug_assert!(idx >= 15);
@@ -526,6 +609,14 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         let our_row = ((our_row >> offset) & MASK) as u16;
         let their_row = ((their_row >> offset) & MASK) as u16;
         let border_row = ((border_row >> offset) & MASK) as u16;
+
+        // NOTE: The normal patterns can also be done by flipping the bitstring and checking for
+        // the first one
+        //
+        // In other words, we could probably save space by checking for patterns inversed:
+        // ,,,xbbbb.x,,,,,
+        // Is the inversed version of:
+        // ,,,,,x.bbbbx,,,
 
         const FOUR_PATTERNS: &[u16] = &[
             0b000000010111010,
@@ -585,10 +676,10 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
             0b000000000100000,
             0b000000001000000,
             0b000000100000000,
-            0b000000000001000,
-            0b000000000010000,
-            0b000000000100000,
-            0b000000001000000,
+            0b000000100000000,
+            0b000001000000000,
+            0b000010000000000,
+            0b000100000000000,
         ];
 
         const NO_OURS_PATTERNS: &[u16] = &[
@@ -617,15 +708,114 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
             0b000001000001000,
             0b000010000010000,
             0b001000001000000,
-            0b000000100000100,
             0b000001000001000,
             0b000010000010000,
             0b000100000100000,
+            0b001000001000000,
         ];
 
-        //const FIVE_OFFSETS: &[Four
+        const FIVE_OFFSETS: &[Four<u8>] = &[
+            // ,,,,,,xb.bbb.bx
+            // ,,,,xb.bbb.bx,,
+            // ,,,xb.bbb.bx,,,
+            // ,,xb.bbb.bx,,,,
+            // xb.bbb.bx,,,,,,
+            Four::Double(2, 6),
+            Four::Double(4, 8),
+            Four::Double(5, 9),
+            Four::Double(6, 10),
+            Four::Double(8, 12),
+            // ,,,,,x.bbbb.x,,
+            // ,,,,x.bbbb.x,,,
+            // ,,,x.bbbb.x,,,,
+            // ,,x.bbbb.x,,,,,
+            Four::Straight(3, 8),
+            Four::Straight(4, 9),
+            Four::Straight(5, 10),
+            Four::Straight(6, 11),
+            // ,,,,,,xbbbb.x,,
+            // ,,,,,xbbbb.x,,,
+            // ,,,,xbbbb.x,,,,
+            // ,,,xbbbb.x,,,,,
+            Four::Normal(3),
+            Four::Normal(4),
+            Four::Normal(5),
+            Four::Normal(6),
+            // ,,,,,,xb.bbbx,,
+            // ,,,,xb.bbbx,,,,
+            // ,,,xb.bbbx,,,,,
+            // ,,xb.bbbx,,,,,,
+            Four::Normal(6),
+            Four::Normal(8),
+            Four::Normal(9),
+            Four::Normal(10),
+            // ,,,,,,xbb.bbx,,
+            // ,,,,,xbb.bbx,,,
+            // ,,,xbb.bbx,,,,,
+            // ,,xbb.bbx,,,,,,
+            Four::Normal(5),
+            Four::Normal(6),
+            Four::Normal(8),
+            Four::Normal(9),
+            // ,,,,,,xbbb.bx,,
+            // ,,,,,xbbb.bx,,,
+            // ,,,,xbbb.bx,,,,
+            // ,,xbbb.bx,,,,,,
+            Four::Normal(4),
+            Four::Normal(5),
+            Four::Normal(6),
+            Four::Normal(8),
+            // ,,,,,x.bbbbx,,,
+            // ,,,,x.bbbbx,,,,
+            // ,,,x.bbbbx,,,,,
+            // ,,x.bbbbx,,,,,,
+            Four::Normal(8),
+            Four::Normal(9),
+            Four::Normal(10),
+            Four::Normal(11),
+        ];
 
-        todo!()
+        debug_assert_eq!(FOUR_PATTERNS.len(), EMPTY_PATTERNS.len());
+        debug_assert_eq!(EMPTY_PATTERNS.len(), NO_OURS_PATTERNS.len());
+        debug_assert_eq!(NO_OURS_PATTERNS.len(), FIVE_OFFSETS.len());
+
+        let mut i = 0;
+        while i < FOUR_PATTERNS.len() {
+            if (our_row & FOUR_PATTERNS[i]) == FOUR_PATTERNS[i]
+                && (their_row & EMPTY_PATTERNS[i]) == 0
+                && (our_row & EMPTY_PATTERNS[i]) == 0
+                && (border_row & EMPTY_PATTERNS[i]) == 0
+                && (our_row & NO_OURS_PATTERNS[i]) == 0
+            {
+                return Some(FIVE_OFFSETS[i].add(offset));
+            }
+            i += 1;
+        }
+
+        None
+    }
+
+    pub fn get_four(&self, pos: Pos, side: Side) -> Option<Four<Pos>> {
+        let our_row = self.row_of(pos.row(), side);
+        let their_row = self.row_of(pos.row(), side.opposite());
+        let border_row = if SIZE == RENJU_BOARD_SIZE {
+            Self::NORMAL_BOUNDARY_BOARD.row(pos.row())
+        } else {
+            Self::DIAGONAL_BOUNDARY_BOARD.row(pos.row())
+        };
+
+        match Self::get_four_impl(pos.col(), our_row, their_row, border_row) {
+            Some(Four::Normal(col)) => Some(Four::Normal(Pos::new(pos.row(), col))),
+            Some(Four::Straight(col1, col2)) => Some(Four::Straight(
+                Pos::new(pos.row(), col1),
+                Pos::new(pos.row(), col2),
+            )),
+            Some(Four::Double(col1, col2)) => Some(Four::Double(
+                Pos::new(pos.row(), col1),
+                Pos::new(pos.row(), col2),
+            )),
+            _ => None,
+        }
     }
 
     //NOTE you should probably not use this
@@ -648,6 +838,10 @@ impl<const SIZE: usize> FromStr for PieceBoard<SIZE> {
         while let Some(ch) = iter.next() {
             if !ch.is_ascii_alphabetic() {
                 bail!("not ascii alpha");
+            }
+
+            if ch.is_whitespace() {
+                continue;
             }
 
             let side = if ch.is_ascii_lowercase() {
@@ -696,7 +890,7 @@ pub struct Board {
 }
 
 impl Board {
-    const MARGIN: u8 = 12;
+    const MARGIN: u8 = (64 - RENJU_BOARD_SIZEU8) / 2;
 
     pub const fn new() -> Self {
         Self {
@@ -772,6 +966,23 @@ impl Board {
                 .map(|x| x.map(untransform_right)),
             self.board3
                 .get_three(transform_left(pos), side)
+                .map(|x| x.map(untransform_left)),
+        ]
+    }
+
+    pub fn get_fours(&self, pos: Pos, side: Side) -> [Option<Four<Pos>>; 4] {
+        [
+            self.board0
+                .get_four(Self::transform_rowmajor(pos), side)
+                .map(|x| x.map(Self::untransform_rowmajor)),
+            self.board1
+                .get_four(Self::transform_colmajor(pos), side)
+                .map(|x| x.map(Self::untransform_colmajor)),
+            self.board2
+                .get_four(transform_right(pos), side)
+                .map(|x| x.map(untransform_right)),
+            self.board3
+                .get_four(transform_left(pos), side)
                 .map(|x| x.map(untransform_left)),
         ]
     }
@@ -854,7 +1065,7 @@ impl Board {
     }
 
     #[cfg(test)]
-    pub fn gen_table<F: Fn(Pos) -> Pos>(f: F) {
+    pub fn gen_table<F: Fn(Pos) -> Pos>(name: &str, f: F) {
         let mut transformed = HashMap::new();
         let mut inverse = HashMap::new();
 
@@ -874,7 +1085,7 @@ impl Board {
                 inverse.insert(tpos, pos);
             }
         }
-        print!("const TRANSFORM_TABLE: &'static [&'static [Pos]] = &[");
+        print!("const {}_TABLE: &'static [&'static [Pos]] = &[", name);
 
         for row in 0..RENJU_BOARD_SIZEU8 {
             print!("&[");
@@ -890,7 +1101,10 @@ impl Board {
         }
         println!("];");
 
-        println!("const INVERSE_TABLE: &'static [&'static [Pos]] = &[");
+        println!(
+            "const INVERSE_{}_TABLE: &'static [&'static [Pos]] = &[",
+            name
+        );
         for row in 0..=max_row {
             print!("&[");
             for col in 0..=max_col {
@@ -908,6 +1122,10 @@ impl Board {
         println!("];");
     }
 
+    pub fn flip_horizontal(&self) -> Self {
+        self.transform(|pos| Pos::new(pos.row(), self.size() - pos.col() - 1))
+    }
+
     pub fn positions(&self) -> impl Iterator<Item = Pos> {
         let size = self.size();
         std::iter::successors(Some(Pos::new(0, 0)), move |prev| {
@@ -922,6 +1140,10 @@ impl Board {
                 None
             }
         })
+    }
+
+    pub fn squares(&self) -> impl Iterator<Item = (Pos, Option<Side>)> + '_ {
+        self.positions().map(|pos| (pos, self.at(pos)))
     }
 }
 
@@ -969,7 +1191,7 @@ mod tests {
     use crate::table::*;
     use anyhow::Result;
     use std::collections::HashSet;
-    use tools::{DeltaPos, Pos};
+    use tools::Pos;
 
     #[test]
     fn place_and_remove_bitboard() {
@@ -1776,5 +1998,160 @@ mod tests {
             }
         }
         assert_eq!(b, a);
+    }
+
+    #[test]
+    fn test_squares_iter() {
+        let board = Board::new();
+
+        for (_, square) in board.squares() {
+            assert_eq!(square, None);
+        }
+    }
+
+    fn test_four_transformed<F>(board: Board, fours: Board, fives: Board, f: F)
+    where
+        F: Fn(Pos) -> Pos,
+    {
+        let board = board.transform(&f);
+        let fours = fours.transform(&f);
+        let fives: HashSet<Pos> = fives
+            .transform(&f)
+            .squares()
+            .filter(|(_, square)| matches!(square, Some(Side::Black)))
+            .map(|(pos, _)| pos)
+            .collect();
+
+        for pos in board.positions() {
+            let res = board
+                .get_fours(pos, Side::Black)
+                .into_iter()
+                .filter_map(std::convert::identity)
+                .flatten()
+                .collect();
+
+            if let Some(_) = fours.at(pos) {
+                assert_eq!(fives, res);
+            } else {
+                assert_eq!(res, HashSet::new());
+            }
+        }
+    }
+
+    fn test_four_straight<F>(board: Board, fours: Board, fives: Board, f: F)
+    where
+        F: Fn(Pos) -> Pos,
+    {
+        test_four_transformed(board, fours, fives, &f);
+        test_four_transformed(board, fours, fives, |pos| f(Pos::transpose(pos)));
+    }
+
+    fn test_four_straight_shifted<B>(board: &str, fours: &str, fives: &str, range: B)
+    where
+        B: IntoIterator<Item = i8>,
+    {
+        let board = board.parse().unwrap();
+        let fours = fours.parse().unwrap();
+        let fives = fives.parse().unwrap();
+        for shift in range {
+            test_four_straight(board, fours, fives, |pos| {
+                Pos::new(pos.row(), (pos.col() as i8 + shift) as u8)
+            });
+        }
+    }
+
+    fn check_fours_impl(board: &Board, fours: &Board, fives: &Board) {
+        let fives: HashSet<Pos> = fives
+            .squares()
+            .filter(|(_, square)| matches!(square, Some(Side::Black)))
+            .map(|(pos, _)| pos)
+            .collect();
+
+        for (pos, square) in fours.squares() {
+            let res: HashSet<Pos> = board
+                .get_fours(pos, Side::Black)
+                .into_iter()
+                .filter_map(std::convert::identity)
+                .flatten()
+                .collect();
+
+            if let Some(_) = square {
+                assert_eq!(res, fives);
+            } else {
+                assert_eq!(res, HashSet::new());
+            }
+        }
+    }
+
+    fn check_fours(board: &Board, fours: &Board, fives: &Board) {
+        check_fours_impl(board, fours, fives);
+        check_fours_impl(
+            &board.flip_horizontal(),
+            &fours.flip_horizontal(),
+            &fives.flip_horizontal(),
+        );
+    }
+
+    fn test_four_pattern(pattern: &str, len: u8, fours: &str, fives: &str) {
+        let max = RENJU_BOARD_SIZEU8 - len;
+
+        let mut board: Board = pattern.parse().unwrap();
+        let mut fours: Board = fours.parse().unwrap();
+        let mut fives: Board = fives.parse().unwrap();
+
+        for i in 0..=max {
+            println!("i={}", i);
+            check_fours(&board, &fours, &fives);
+
+            if i < max {
+                board = board.transform(|pos| Pos::new(pos.row(), pos.col() + 1));
+                fours = fours.transform(|pos| Pos::new(pos.row(), pos.col() + 1));
+                fives = fives.transform(|pos| Pos::new(pos.row(), pos.col() + 1));
+            }
+        }
+    }
+
+    #[test]
+    fn test_horiz_fours_none() {
+        test_four_pattern("", 0, "", "");
+        test_four_pattern("a8", 1, "", "");
+        test_four_pattern("a8b8", 2, "", "");
+        test_four_pattern("a8b8c8", 3, "", "");
+    }
+
+    #[test]
+    fn test_horiz_fours_straight() {
+        test_four_pattern("b8c8d8e8", 6, "b8c8d8e8", "a8f8");
+        test_four_pattern("a8b8c8d8e8", 7, "", "");
+        test_four_pattern("a8c8d8e8f8", 7, "c8d8e8f8", "g8");
+        test_four_pattern("A8c8d8e8f8", 7, "c8d8e8f8", "b8g8");
+        test_four_pattern("A8c8d8e8f8H8", 8, "c8d8e8f8", "b8g8");
+    }
+
+    #[test]
+    fn test_horiz_fours_degenerate() {
+        test_four_pattern("a8c8d8e8g8", 7, "a8c8d8e8g8", "b8f8");
+        test_four_pattern("a8B8c8d8e8g8", 7, "c8d8e8g8", "f8");
+        test_four_pattern("a8B8c8d8e8F8g8", 7, "", "");
+        test_four_pattern("a8b8c8d8e8g8", 7, "", "");
+        test_four_pattern("a8b8c8d8e8f8g8", 7, "", "");
+    }
+
+    #[test]
+    fn test_horiz_fours_normal() {
+        test_four_pattern("a8c8d8e8", 5, "a8c8d8e8", "b8");
+        test_four_pattern("a8B8c8d8e8", 5, "", "");
+        test_four_pattern("a8c8d8e8f8", 7, "c8d8e8f8", "g8");
+
+        test_four_pattern("a8b8d8e8f8", 6, "", "");
+        test_four_pattern("A8b8d8e8f8", 6, "b8d8e8f8", "c8");
+
+        test_four_pattern("A8b8c8d8e8", 6, "b8c8d8e8", "f8");
+        test_four_pattern("A8b8c8d8e8G8", 7, "b8c8d8e8", "f8");
+        test_four_pattern("A8b8c8d8e8g8", 7, "", "");
+
+        test_four_pattern("a8b8d8e8", 5, "a8b8d8e8", "c8");
+        test_four_pattern("a8b8C8d8e8", 5, "", "");
+        test_four_pattern("a8b8c8d8e8", 5, "", "");
     }
 }
