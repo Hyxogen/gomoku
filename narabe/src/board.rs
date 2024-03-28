@@ -1153,6 +1153,41 @@ impl Board {
         board
     }
 
+    fn is_double_four(&self, pos: Pos) -> bool {
+        self.get_fours(pos, Side::Black).into_iter().filter_map(std::convert::identity).map(|four| match four {
+            Four::Normal(_) | Four::Straight(_, _) => 1,
+            Four::Double(_, _) => 2,
+        }).sum::<u8>() >= 2
+    }
+
+    pub fn renju_forbidden(mut self) -> BitBoard<RENJU_BOARD_SIZE> {
+        let mut forbidden = BitBoard::new();
+
+        for row in 0..RENJU_BOARD_SIZEU8 {
+            for col in 0..RENJU_BOARD_SIZEU8 {
+                let pos = (row, col).into();
+                if self.at(pos) != None {
+                    //Already taken
+                    continue;
+                }
+
+                self = self.set(pos, Some(Side::Black));
+
+                //A winning move is always allowed
+                if !self.is_win_no_overline(pos, Side::Black) {
+                    if self.is_overline(pos, Side::Black) {
+                        forbidden.set(pos, true);
+                    } else if self.is_double_four(pos) {
+                        forbidden.set(pos, true);
+                    }
+                }
+
+                self = self.set(pos, None);
+            }
+        }
+        forbidden
+    }
+
     pub fn transform<F>(&self, f: F) -> Self
     where
         F: Fn(Pos) -> Pos,
