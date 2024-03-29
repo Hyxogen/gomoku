@@ -1207,10 +1207,10 @@ impl Board {
                         count += 1;
 
                         self = self.set(pos, Some(Side::Black));
-                        if !self.is_win_no_overline(pos, Side::Black) {
-                            if self.is_renju_forbidden(pos) {
-                                blocked += 1;
-                            }
+
+                        if self.is_win_no_overline(pos, Side::Black) || self.is_renju_forbidden(pos)
+                        {
+                            blocked += 1;
                         }
 
                         self = self.set(pos, None);
@@ -1261,7 +1261,10 @@ impl Board {
 
     pub fn threes(self) -> BitBoard<RENJU_BOARD_SIZE> {
         self.construct_bitboard(|board, pos, side| {
-            board.get_threes(pos, side).into_iter().any(|three| three.is_some())
+            board
+                .get_threes(pos, side)
+                .into_iter()
+                .any(|three| three.is_some())
         })
     }
 
@@ -2521,7 +2524,8 @@ mod tests {
 
     #[test]
     fn renju_forbidden() {
-        //check_forbidden("i6g8h8i8h9i9", "h7f9");
+        check_forbidden("i6g8h8i8h9i9", "h7f9");
         check_forbidden("h11j11f12h12e13k13f14k14c15k15", "i12");
+        check_forbidden("g11h11j12j13k13l14m15", "");
     }
 }
