@@ -126,6 +126,7 @@ where
 fn reduce_aggresive<'a, R, W>(
     board: &Board,
     bot: &mut ManagerClient<'a, R, W>,
+    start: (BitBoard<RENJU_BOARD_SIZE>, BitBoard<RENJU_BOARD_SIZE>),
 ) -> (
     Board,
     BitBoard<RENJU_BOARD_SIZE>,
@@ -136,7 +137,7 @@ where
     R::Item: AsRef<str>,
     W: Write,
 {
-    let mut res = Default::default();
+    let mut res = start;
     let mut reduced = *board;
     'outer: loop {
         for skip in 0..reduced.pieces().count() {
@@ -169,10 +170,9 @@ where
     R::Item: AsRef<str>,
     W: Write,
 {
-    if test_field(board, bot) != None {
-        Err(reduce_aggresive(board, bot))
-    } else {
-        Ok(())
+    match test_field(board, bot) {
+        None => Ok(()),
+        Some(start) => Err(reduce_aggresive(board, bot, start)),
     }
 }
 
