@@ -3,7 +3,7 @@ use anyhow::{bail, Error};
 #[cfg(test)]
 use std::collections::HashMap;
 use std::fmt;
-use std::ops::Not;
+use std::ops::{BitXor, Not};
 use std::str::FromStr;
 use tools::Pos;
 
@@ -77,6 +77,27 @@ impl<const SIZE: usize> BitBoard<SIZE> {
     pub const fn set(mut self, pos: Pos, val: bool) -> Self {
         debug_assert!((pos.col() as usize) < 64);
         self.rows[pos.row() as usize] = set_bit(self.rows[pos.row() as usize], pos.col(), val);
+        self
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.rows.iter().all(|row| *row == 0)
+    }
+}
+
+impl<const SIZE: usize> Default for BitBoard<SIZE> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<const SIZE: usize> BitXor for BitBoard<SIZE> {
+    type Output = Self;
+
+    fn bitxor(mut self, rhs: Self) -> Self::Output {
+        for i in 0..SIZE {
+            self.rows[i] ^= rhs.rows[i];
+        }
         self
     }
 }
@@ -340,6 +361,10 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         }
     }
 
+    const fn black(&self) -> &BitBoard<SIZE> {
+        &self.black
+    }
+
     const fn is_black(v: Option<Side>) -> bool {
         matches!(v, Some(Side::Black))
     }
@@ -562,11 +587,16 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
     //
     // Degenerate patterns:
     //        V
-    // ,,,,,,xb.bbb.bx
     // ,,,,xb.bbb.bx,,
     // ,,,xb.bbb.bx,,,
     // ,,xb.bbb.bx,,,,
-    // xb.bbb.bx,,,,,,
+    //
+    // NOTE: THESE POSITIONS ARE NOT DEGENERATE
+    //  V     V     V
+    // xb.bbb.bx,,,,,
+    // ,,,,,,xb.bbb.bx
+    //
+    // Rather they're just a normal pattern
     //
     // Straight patterns:
     //        V
@@ -619,11 +649,9 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         // ,,,,,x.bbbbx,,,
 
         const FOUR_PATTERNS: &[u16] = &[
-            0b000000010111010,
             0b000001011101000,
             0b000010111010000,
             0b000101110100000,
-            0b010111010000000,
             0b000000011110000,
             0b000000111100000,
             0b000001111000000,
@@ -651,11 +679,9 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         ];
 
         const EMPTY_PATTERNS: &[u16] = &[
-            0b000000001000100,
             0b000000100010000,
             0b000001000100000,
             0b000010001000000,
-            0b001000100000000,
             0b000000100001000,
             0b000001000010000,
             0b000010000100000,
@@ -683,11 +709,9 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         ];
 
         const NO_OURS_PATTERNS: &[u16] = &[
-            0b000000100000001,
             0b000010000000100,
             0b000100000001000,
             0b001000000010000,
-            0b100000001000000,
             0b000001000000100,
             0b000010000001000,
             0b000100000010000,
@@ -715,16 +739,12 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         ];
 
         const FIVE_OFFSETS: &[Four<u8>] = &[
-            // ,,,,,,xb.bbb.bx
             // ,,,,xb.bbb.bx,,
             // ,,,xb.bbb.bx,,,
             // ,,xb.bbb.bx,,,,
-            // xb.bbb.bx,,,,,,
-            Four::Double(2, 6),
             Four::Double(4, 8),
             Four::Double(5, 9),
             Four::Double(6, 10),
-            Four::Double(8, 12),
             // ,,,,,x.bbbb.x,,
             // ,,,,x.bbbb.x,,,
             // ,,,x.bbbb.x,,,,
@@ -1081,11 +1101,8 @@ impl Board {
     }
 
     pub fn is_overline(&self, pos: Pos, side: Side) -> bool {
-        self.board0
-            .is_overline(Self::transform_rowmajor(pos), side)
-            | self
-                .board1
-                .is_overline(Self::transform_colmajor(pos), side)
+        self.board0.is_overline(Self::transform_rowmajor(pos), side)
+            | self.board1.is_overline(Self::transform_colmajor(pos), side)
             | self.board2.is_overline(transform_right(pos), side)
             | self.board3.is_overline(transform_left(pos), side)
     }
@@ -1153,14 +1170,94 @@ impl Board {
         board
     }
 
-    fn is_double_four(&self, pos: Pos) -> bool {
-        self.get_fours(pos, Side::Black).into_iter().filter_map(std::convert::identity).map(|four| match four {
-            Four::Normal(_) | Four::Straight(_, _) => 1,
-            Four::Double(_, _) => 2,
-        }).sum::<u8>() >= 2
+    fn is_double_four(&self, pos: Pos, side: Side) -> bool {
+        self.get_fours(pos, side)
+            .into_iter()
+            .filter_map(std::convert::identity)
+            .map(|four| match four {
+                Four::Normal(_) | Four::Straight(_, _) => 1,
+                Four::Double(_, _) => 2,
+            })
+            .sum::<u8>()
+            >= 2
     }
 
-    pub fn renju_forbidden(mut self) -> BitBoard<RENJU_BOARD_SIZE> {
+    fn is_renju_forbidden(mut self, pos: Pos) -> bool {
+        debug_assert_ne!(self.at(pos), Some(Side::White));
+
+        let mut res = false;
+
+        self = self.set(pos, Some(Side::Black));
+
+        if !self.is_win_no_overline(pos, Side::Black) {
+            if self.is_overline(pos, Side::Black) || self.is_double_four(pos, Side::Black) {
+                res = true;
+            } else {
+                let mut actual = 0;
+
+                for three in self
+                    .get_threes(pos, Side::Black)
+                    .into_iter()
+                    .filter_map(std::convert::identity)
+                {
+                    let mut count = 0;
+                    let mut blocked = 0;
+
+                    for pos in three {
+                        count += 1;
+
+                        self = self.set(pos, Some(Side::Black));
+                        if !self.is_win_no_overline(pos, Side::Black) {
+                            if self.is_renju_forbidden(pos) {
+                                blocked += 1;
+                            }
+                        }
+                    }
+
+                    if blocked < count {
+                        actual += 1;
+                    }
+                }
+                res = actual > 1;
+            }
+        }
+
+        //self = self.set(pos, None);
+
+        res
+    }
+
+    pub fn construct_bitboard<F>(mut self, f: F) -> BitBoard<RENJU_BOARD_SIZE>
+    where
+        F: Fn(&Self, Pos, Side) -> bool,
+    {
+        let mut res = BitBoard::new();
+
+        for pos in self.positions() {
+            if self.at(pos) != None {
+                continue;
+            }
+
+            self = self.set(pos, Some(Side::Black));
+            res = res.set(pos, f(&self, pos, Side::Black));
+            self = self.set(pos, None);
+        }
+        res
+    }
+
+    pub fn win(self) -> BitBoard<RENJU_BOARD_SIZE> {
+        self.construct_bitboard(Self::is_win_no_overline)
+    }
+
+    pub fn overline(self) -> BitBoard<RENJU_BOARD_SIZE> {
+        self.construct_bitboard(Self::is_overline)
+    }
+
+    pub fn double_fours(self) -> BitBoard<RENJU_BOARD_SIZE> {
+        self.construct_bitboard(Self::is_double_four)
+    }
+
+    pub fn renju_forbidden(self) -> BitBoard<RENJU_BOARD_SIZE> {
         let mut forbidden = BitBoard::new();
 
         for row in 0..RENJU_BOARD_SIZEU8 {
@@ -1171,18 +1268,9 @@ impl Board {
                     continue;
                 }
 
-                self = self.set(pos, Some(Side::Black));
-
-                //A winning move is always allowed
-                if !self.is_win_no_overline(pos, Side::Black) {
-                    if self.is_overline(pos, Side::Black) {
-                        forbidden.set(pos, true);
-                    } else if self.is_double_four(pos) {
-                        forbidden.set(pos, true);
-                    }
-                }
-
-                self = self.set(pos, None);
+                //TODO make sure that it doesn't create a copy of the board for the check, is not
+                //needed as the board is returned to original state
+                forbidden = forbidden.set(pos, self.is_renju_forbidden(pos));
             }
         }
         forbidden
@@ -1283,6 +1371,13 @@ impl Board {
     pub fn squares(&self) -> impl Iterator<Item = (Pos, Option<Side>)> + '_ {
         self.positions().map(|pos| (pos, self.at(pos)))
     }
+
+    pub fn pieces(&self) -> impl Iterator<Item = (Pos, Side)> + '_ {
+        self.squares().filter_map(|(pos, square)| match square {
+            Some(side) => Some((pos, side)),
+            _ => None,
+        })
+    }
 }
 
 impl FromStr for Board {
@@ -1325,7 +1420,9 @@ impl fmt::Display for Board {
 
 #[cfg(test)]
 mod tests {
-    use crate::board::{BitBoard, Board, PieceBoard, Side, Three, RENJU_BOARD_SIZEU8};
+    use crate::board::{
+        BitBoard, Board, PieceBoard, Side, Three, RENJU_BOARD_SIZE, RENJU_BOARD_SIZEU8,
+    };
     use crate::table::*;
     use anyhow::Result;
     use std::collections::HashSet;
@@ -2249,8 +2346,8 @@ mod tests {
 
     #[test]
     fn test_horiz_fours_degenerate() {
-        test_four_pattern("a8c8d8e8g8", 7, "a8c8d8e8g8", "b8f8");
-        test_four_pattern("a8B8c8d8e8g8", 7, "c8d8e8g8", "f8");
+        //test_four_pattern("a8c8d8e8g8", 7, "a8c8d8e8g8", "b8f8");
+        //test_four_pattern("a8B8c8d8e8g8", 7, "c8d8e8g8", "f8");
         test_four_pattern("a8B8c8d8e8F8g8", 7, "", "");
         test_four_pattern("a8b8c8d8e8g8", 7, "", "");
         test_four_pattern("a8b8c8d8e8f8g8", 7, "", "");
@@ -2325,8 +2422,8 @@ mod tests {
 
     #[test]
     fn test_diag_fours_degenerate() {
-        test_four_pattern_box("a1c3d4e5g7", 7, 7, "a1c3d4e5g7", "b2f6");
-        test_four_pattern_box("a1B2c3d4e5g7", 7, 7, "c3d4e5g7", "f6");
+        //test_four_pattern_box("a1c3d4e5g7", 7, 7, "a1c3d4e5g7", "b2f6");
+        //test_four_pattern_box("a1B2c3d4e5g7", 7, 7, "c3d4e5g7", "f6");
         test_four_pattern_box("a1B2c3d4e5f6g7", 7, 7, "", "");
         test_four_pattern_box("a1b2c3d4e5g7", 7, 7, "", "");
         test_four_pattern_box("a1b2c3d4e5f6g7", 7, 7, "", "");
@@ -2349,13 +2446,12 @@ mod tests {
 
     fn test_pattern<F>(board: &str, places: &str, f: F)
     where
-        F: Fn(&Board, Pos, Side) -> bool
+        F: Fn(&Board, Pos, Side) -> bool,
     {
         let board: Board = board.parse().unwrap();
         let places: Board = places.parse().unwrap();
 
         for (pos, square) in places.squares() {
-            println!("pos={}", pos);
             if let Some(side) = square {
                 assert_eq!(f(&board, pos, side), true);
                 assert_eq!(f(&board, pos, !side), false);
@@ -2391,6 +2487,7 @@ mod tests {
     #[test]
     fn overline() {
         test_overline("a8b8c8d8e8f8", "a8b8c8d8e8f8");
+        test_overline("f8g8h8i8j8k8", "f8g8h8i8j8k8");
         test_overline("", "");
         test_overline("a8", "");
         test_overline("a8b8", "");
@@ -2399,6 +2496,17 @@ mod tests {
         test_overline("a8b8c8d8e8", "");
 
         test_overline("b8c8d8e8f8", "");
+    }
 
+    fn check_forbidden(board: &str, forbidden: &str) {
+        let board: Board = board.parse().unwrap();
+        let forbidden = forbidden.parse::<PieceBoard<RENJU_BOARD_SIZE>>().unwrap();
+
+        assert_eq!(board.renju_forbidden(), *forbidden.black());
+    }
+
+    #[test]
+    fn double_three1() {
+        check_forbidden("i6g8h8i8h9i9", "h7f9");
     }
 }

@@ -2,112 +2,25 @@ use clap::Parser;
 use macroquad::prelude::*;
 
 use narabe::board::{Board, Side};
-use protocol::{BrainCommand, BrainCommandReader, Field, ManagerCommand};
-use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
-use std::process::{Command, Stdio};
 use tools::Pos;
-use std::borrow::Cow;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
     #[arg(short, long, default_value = "")]
     board: String,
-
-    bot: PathBuf,
 }
 
 const LINE_WIDTH: f32 = 1.;
-
-pub struct ManagerClient<'a, R, W>
-where
-    R: Iterator,
-    R::Item: AsRef<str>,
-    W: Write,
-{
-    ostream: W,
-    istream: BrainCommandReader<'a, R>,
-}
-
-impl<'a, R, W> ManagerClient<'a, R, W>
-where
-    R: Iterator,
-    R::Item: AsRef<str>,
-    W: Write,
-{
-    pub fn new(istream: R, ostream: W) -> Self {
-        Self {
-            istream: BrainCommandReader::new(istream),
-            ostream,
-        }
-    }
-
-    pub fn send(&mut self, cmd: &ManagerCommand) {
-        println!("{}", cmd);
-        writeln!(self.ostream, "{}", cmd).unwrap();
-    }
-}
-
-impl<'a, R, W> Iterator for ManagerClient<'a, R, W>
-where
-    R: Iterator,
-    R::Item: AsRef<str>,
-    W: Write,
-{
-    type Item = BrainCommand<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        while let Some(cmd) = self.istream.next() {
-            match cmd {
-                Ok(BrainCommand::Ack) => (),
-                Ok(BrainCommand::Debug(msg)) => eprintln!("DEBUG: {}", msg.as_ref()),
-                Ok(cmd) => return Some(cmd),
-                Err(err) => eprintln!("parse error: {}", err),
-            }
-        }
-        None
-    }
-}
-
-fn read_positions(board: &Board, side: Side) -> Vec<(Pos, Field)> {
-    let mut vec = Vec::new();
-
-    for row in 0..15 {
-        for col in 0..15 {
-            let pos = Pos::new(row, col);
-            if let Some(s) = board.at(pos) {
-                let field = if s == side {
-                    Field::Mine
-                } else {
-                    Field::Theirs
-                };
-                vec.push((pos, field));
-            }
-        }
-    }
-    vec
-}
 
 #[macroquad::main("gomoku")]
 async fn main() {
     let args = Args::parse();
     let mut board: Board = args.board.parse().unwrap();
-
-    let bot = Command::new(args.bot)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
-
-    let mut client = ManagerClient::new(
-        BufReader::new(bot.stdout.unwrap())
-            .lines()
-            .map(|line| line.unwrap()),
-        bot.stdin.unwrap(),
-    );
-
-    client.send(&ManagerCommand::Start(15));
+    let mut forbidden = board.renju_forbidden();
+    let mut win = board.win();
+    let mut overline = board.overline();
+    let mut double_fours = board.double_fours();
 
     let dots: &[Pos] = &[
         "h8".parse().unwrap(),
@@ -116,8 +29,6 @@ async fn main() {
         "l12".parse().unwrap(),
         "l4".parse().unwrap(),
     ];
-
-    let mut forbidden: Vec<Pos> = Vec::new();
 
     loop {
         clear_background(YELLOW);
@@ -163,52 +74,40 @@ async fn main() {
             );
         }
 
+        for (pos, square) in board.squares() {
+            let (x, y) = to_screen_coords(pos);
+
+            if let Some(side) =  square {
+                let color = if side == Side::Black { BLACK } else { WHITE };
+
+                let r = square_width.min(square_height) / 2.;
+
+                draw_circle(x, y, r, color);
+            }
+        }
+
+
         for row in 0..size {
             for col in 0..size {
                 let pos = (row, col).into();
                 let (x, y) = to_screen_coords(pos);
 
-                if let Some(side) = board.at(pos) {
-                    let color = if side == Side::Black { BLACK } else { WHITE };
-
-                    let r = square_width.min(square_height) / 2.;
-
-                    draw_circle(x, y, r, color);
+                if win.at(pos) {
+                    draw_circle(x, y, 5., GOLD);
                 } else {
-                    /*board.set(pos, Square::Piece(Side::Black));
-
-                    if board.is_overline(pos, Side::Black)
-                        || (!board.is_win(pos, Side::Black)
-                            && (board.is_renju_double_three(pos, Side::Black)
-                                || board.is_double_four(pos, Side::Black)))
-                    {
+                    if forbidden.at(pos) {
                         draw_circle(x, y, 5., RED);
                     }
 
-                    if board.is_win(pos, Side::Black) && !board.is_overline(pos, Side::Black) {
-                        draw_circle(x, y, 5., GOLD);
+                    if overline.at(pos) {
+                        draw_circle(x, y, 5., PURPLE);
                     }
 
-                    board.set(pos, Square::Empty);*/
+                    if double_fours.at(pos) {
+                        draw_circle(x, y, 5., BLUE);
+                    }
                 }
-
-                /*if board.count_threes(pos, Side::Black) > 0 {
-                    draw_circle(x, y, 5., GREEN);
-                }
-
-                if board.count_fours(pos, Side::Black) > 0 {
-                    draw_circle(x, y, 5., PURPLE);
-                }
-
-                if board.is_overline(pos, Side::Black) {
-                    draw_circle(x, y, 5., DARKPURPLE);
-                }*/
             }
-        }
-
-        for pos in forbidden.iter() {
-            let (x, y) = to_screen_coords(*pos);
-            draw_circle(x, y, 7., RED);
         }
 
         for dot in dots {
@@ -229,18 +128,17 @@ async fn main() {
                 Side::Black
             };
             board = board.set(square, Some(side));
-
-            client.send(&ManagerCommand::YXBoard(Cow::Owned(read_positions(
-                &board,
-                Side::Black,
-            ))));
+            forbidden = board.renju_forbidden();
+            win = board.win();
+            overline = board.overline();
+            double_fours = board.double_fours();
         }
         if is_mouse_button_down(MouseButton::Middle) {
             board = board.set(square, None);
-            client.send(&ManagerCommand::YXBoard(Cow::Owned(read_positions(
-                &board,
-                Side::Black,
-            ))));
+            forbidden = board.renju_forbidden();
+            win = board.win();
+            overline = board.overline();
+            double_fours = board.double_fours();
         }
 
         if is_key_down(KeyCode::C) {
@@ -249,16 +147,6 @@ async fn main() {
 
         if is_key_down(KeyCode::R) {
             board = Board::new();
-        }
-
-        if is_key_down(KeyCode::F) {
-            client.send(&ManagerCommand::YXShowForbid);
-
-            if let Some(BrainCommand::Forbid(positions)) = client.next()  {
-                forbidden = positions.into_owned();
-            } else {
-                panic!("expected forbidden positions");
-            }
         }
 
         if is_key_down(KeyCode::D) {
