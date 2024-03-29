@@ -593,6 +593,8 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
     //      V
     // xbb.bb.bbx,
     // ,xbb.bb.bbx
+    //      V
+    // xbbb.b.bbbx
     //
     // NOTE: THESE POSITIONS ARE NOT DEGENERATE
     //  V     V     V
@@ -659,6 +661,8 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
             //
             0b01101101100, // xbb.bb.bbx,
             0b00110110110, // ,xbb.bb.bbx
+            //
+            0b01110101110, // xbbb.b.bbbx
             //Straight
             0b00000111100, // ,,,x.bbbb.x
             0b00001111000, // ,,x.bbbb.x,
@@ -699,6 +703,8 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
             //
             0b00010010000,
             0b00001001000,
+            //
+            0b00001010000,
             //Straight
             0b00001000010,
             0b00010000100,
@@ -739,6 +745,8 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
             //
             0b10000000010,
             0b01000000001,
+            //
+            0b10000000001,
             //Straight
             0b00010000001,
             0b00100000010,
@@ -782,6 +790,8 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
             // ,xbb.bb.bbx
             Four::Double(4, 7),
             Four::Double(3, 6),
+            // xbbb.b.bbbx
+            Four::Double(4, 6),
             // ,,,x.bbbb.x
             // ,,x.bbbb.x,
             // ,x.bbbb.x,,
@@ -2565,5 +2575,6 @@ mod tests {
         check_forbidden("h11j11f12h12e13k13f14k14c15k15", "i12");
         check_forbidden("g11h11j12j13k13l14m15", "");
         check_forbidden("l2l3l6l8l9", "l5");
+        check_forbidden("a2a3a4a8a9a10", "a6");
     }
 }
