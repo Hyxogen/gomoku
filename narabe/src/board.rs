@@ -586,10 +586,13 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
     // xb.bbb.bx
     //
     // Degenerate patterns:
-    //        V
-    // ,,,,xb.bbb.bx,,
-    // ,,,xb.bbb.bx,,,
-    // ,,xb.bbb.bx,,,,
+    //      V
+    // ,,xb.bbb.bx
+    // ,xb.bbb.bx,
+    // xb.bbb.bx,,
+    //      V
+    // xbb.bb.bbx,
+    // ,xbb.bb.bbx
     //
     // NOTE: THESE POSITIONS ARE NOT DEGENERATE
     //  V     V     V
@@ -599,43 +602,43 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
     // Rather they're just a normal pattern
     //
     // Straight patterns:
-    //        V
-    // ,,,,,x.bbbb.x,,
-    // ,,,,x.bbbb.x,,,
-    // ,,,x.bbbb.x,,,,
-    // ,,x.bbbb.x,,,,,
+    //      V
+    // ,,,x.bbbb.x
+    // ,,x.bbbb.x,
+    // ,x.bbbb.x,,
+    // x.bbbb.x,,,
     //
     // Normal patterns:
-    //        V
-    // ,,,,,,xbbbb.x,,
-    // ,,,,,xbbbb.x,,,
-    // ,,,,xbbbb.x,,,,
-    // ,,,xbbbb.x,,,,,
-    //        V
-    // ,,,,,,xb.bbbx,,
-    // ,,,,xb.bbbx,,,,
-    // ,,,xb.bbbx,,,,,
-    // ,,xb.bbbx,,,,,,
-    //        V
-    // ,,,,,,xbb.bbx,,
-    // ,,,,,xbb.bbx,,,
-    // ,,,xbb.bbx,,,,,
-    // ,,xbb.bbx,,,,,,
-    //        V
-    // ,,,,,,xbbb.bx,,
-    // ,,,,,xbbb.bx,,,
-    // ,,,,xbbb.bx,,,,
-    // ,,xbbb.bx,,,,,,
-    //        V
-    // ,,,,,x.bbbbx,,,
-    // ,,,,x.bbbbx,,,,
-    // ,,,x.bbbbx,,,,,
-    // ,,x.bbbbx,,,,,,
+    //      V
+    // ,,,,xbbbb.x
+    // ,,,xbbbb.x,
+    // ,,xbbbb.x,,
+    // ,xbbbb.x,,,
+    //      V
+    // ,,,,xb.bbbx
+    // ,,xb.bbbx,,
+    // ,xb.bbbx,,,
+    // xb.bbbx,,,,
+    //      V
+    // ,,,,xbb.bbx
+    // ,,,xbb.bbx,
+    // ,xbb.bbx,,,
+    // xbb.bbx,,,,
+    //      V
+    // ,,,,xbbb.bx
+    // ,,,xbbb.bx,
+    // ,,xbbb.bx,,
+    // xbbb.bx,,,,
+    //      V
+    // ,,,x.bbbbx,
+    // ,,x.bbbbx,,
+    // ,x.bbbbx,,,
+    // x.bbbbx,,,,
     fn get_four_impl(idx: u8, our_row: u64, their_row: u64, border_row: u64) -> Option<Four<u8>> {
-        const MASK: u64 = (1 << 15) - 1;
-        debug_assert!(idx >= 15);
+        const MASK: u64 = (1 << 11) - 1;
+        debug_assert!(idx >= 11);
 
-        let offset = idx - 7;
+        let offset = idx - 5;
         let our_row = ((our_row >> offset) & MASK) as u16;
         let their_row = ((their_row >> offset) & MASK) as u16;
         let border_row = ((border_row >> offset) & MASK) as u16;
@@ -649,150 +652,184 @@ impl<const SIZE: usize> PieceBoard<SIZE> {
         // ,,,,,x.bbbbx,,,
 
         const FOUR_PATTERNS: &[u16] = &[
-            0b000001011101000,
-            0b000010111010000,
-            0b000101110100000,
-            0b000000011110000,
-            0b000000111100000,
-            0b000001111000000,
-            0b000011110000000,
-            0b000000011110000,
-            0b000000111100000,
-            0b000001111000000,
-            0b000011110000000,
-            0b000000010111000,
-            0b000001011100000,
-            0b000010111000000,
-            0b000101110000000,
-            0b000000011011000,
-            0b000000110110000,
-            0b000011011000000,
-            0b000110110000000,
-            0b000000011101000,
-            0b000000111010000,
-            0b000001110100000,
-            0b000111010000000,
-            0b000000011110000,
-            0b000000111100000,
-            0b000001111000000,
-            0b000011110000000,
+            //Degenerate
+            0b00010111010, // ,,xb.bbb.bx
+            0b00101110100, // ,xb.bbb.bx,
+            0b01011101000, // xb.bbb.bx,,
+            //
+            0b01101101100, // xbb.bb.bbx,
+            0b00110110110, // ,xbb.bb.bbx
+            //Straight
+            0b00000111100, // ,,,x.bbbb.x
+            0b00001111000, // ,,x.bbbb.x,
+            0b00011110000, // ,x.bbbb.x,,
+            0b00111100000, // x.bbbb.x,,,
+            //Normal
+            0b00000111100, // ,,,,xbbbb.x
+            0b00001111000, // ,,,xbbbb.x,
+            0b00011110000, // ,,xbbbb.x,,
+            0b00111100000, // ,xbbbb.x,,,
+            //
+            0b00000101110, // ,,,,xb.bbbx
+            0b00010111000, // ,,xb.bbbx,,
+            0b00101110000, // ,xb.bbbx,,,
+            0b01011100000, // xb.bbbx,,,,
+            //
+            0b00000110110, // ,,,,xbb.bbx
+            0b00001101100, // ,,,xbb.bbx,
+            0b00110110000, // ,xbb.bbx,,,
+            0b01101100000, // xbb.bbx,,,,
+            //
+            0b00000111010, // ,,,,xbbb.bx
+            0b00001110100, // ,,,xbbb.bx,
+            0b00011101000, // ,,xbbb.bx,,
+            0b01110100000, // xbbb.bx,,,,
+            //
+            0b00000111100, // ,,,x.bbbbx,
+            0b00001111000, // ,,x.bbbbx,,
+            0b00011110000, // ,x.bbbbx,,,
+            0b00111100000, // x.bbbbx,,,,
         ];
 
         const EMPTY_PATTERNS: &[u16] = &[
-            0b000000100010000,
-            0b000001000100000,
-            0b000010001000000,
-            0b000000100001000,
-            0b000001000010000,
-            0b000010000100000,
-            0b000100001000000,
-            0b000000000001000,
-            0b000000000010000,
-            0b000000000100000,
-            0b000000001000000,
-            0b000000001000000,
-            0b000000100000000,
-            0b000001000000000,
-            0b000010000000000,
-            0b000000000100000,
-            0b000000001000000,
-            0b000000100000000,
-            0b000001000000000,
-            0b000000000010000,
-            0b000000000100000,
-            0b000000001000000,
-            0b000000100000000,
-            0b000000100000000,
-            0b000001000000000,
-            0b000010000000000,
-            0b000100000000000,
+            //Degenerate
+            0b00001000100,
+            0b00010001000,
+            0b00100010000,
+            //
+            0b00010010000,
+            0b00001001000,
+            //Straight
+            0b00001000010,
+            0b00010000100,
+            0b00100001000,
+            0b01000010000,
+            //Normal
+            0b00000000010,
+            0b00000000100,
+            0b00000001000,
+            0b00000010000,
+            //
+            0b00000010000,
+            0b00001000000,
+            0b00010000000,
+            0b00100000000,
+            //
+            0b00000001000,
+            0b00000010000,
+            0b00001000000,
+            0b00010000000,
+            //
+            0b00000000100,
+            0b00000001000,
+            0b00000010000,
+            0b00001000000,
+            //
+            0b00001000000,
+            0b00010000000,
+            0b00100000000,
+            0b01000000000,
         ];
 
         const NO_OURS_PATTERNS: &[u16] = &[
-            0b000010000000100,
-            0b000100000001000,
-            0b001000000010000,
-            0b000001000000100,
-            0b000010000001000,
-            0b000100000010000,
-            0b001000000100000,
-            0b000000100000100,
-            0b000001000001000,
-            0b000010000010000,
-            0b000100000100000,
-            0b000000100000100,
-            0b000010000010000,
-            0b000100000100000,
-            0b001000001000000,
-            0b000000100000100,
-            0b000001000001000,
-            0b000100000100000,
-            0b001000001000000,
-            0b000000100000100,
-            0b000001000001000,
-            0b000010000010000,
-            0b001000001000000,
-            0b000001000001000,
-            0b000010000010000,
-            0b000100000100000,
-            0b001000001000000,
+            //Degenerate
+            0b00100000001,
+            0b01000000010,
+            0b10000000100,
+            //
+            0b10000000010,
+            0b01000000001,
+            //Straight
+            0b00010000001,
+            0b00100000010,
+            0b01000000100,
+            0b10000001000,
+            //Normal
+            0b00001000001,
+            0b00010000010,
+            0b00100000100,
+            0b01000001000,
+            //
+            0b00001000001,
+            0b00100000100,
+            0b01000001000,
+            0b10000010000,
+            //
+            0b00001000001,
+            0b00010000010,
+            0b01000001000,
+            0b10000010000,
+            //
+            0b00001000001,
+            0b00010000010,
+            0b00100000100,
+            0b10000010000,
+            //
+            0b00010000010,
+            0b00100000100,
+            0b01000001000,
+            0b10000010000,
         ];
 
         const FIVE_OFFSETS: &[Four<u8>] = &[
-            // ,,,,xb.bbb.bx,,
-            // ,,,xb.bbb.bx,,,
-            // ,,xb.bbb.bx,,,,
+            // ,,xb.bbb.bx
+            // ,xb.bbb.bx,
+            // xb.bbb.bx,,
+            Four::Double(2, 6),
+            Four::Double(3, 7),
             Four::Double(4, 8),
-            Four::Double(5, 9),
-            Four::Double(6, 10),
-            // ,,,,,x.bbbb.x,,
-            // ,,,,x.bbbb.x,,,
-            // ,,,x.bbbb.x,,,,
-            // ,,x.bbbb.x,,,,,
+            // xbb.bb.bbx,
+            // ,xbb.bb.bbx
+            Four::Double(4, 7),
+            Four::Double(3, 6),
+            // ,,,x.bbbb.x
+            // ,,x.bbbb.x,
+            // ,x.bbbb.x,,
+            // x.bbbb.x,,,
+            Four::Straight(1, 6),
+            Four::Straight(2, 7),
             Four::Straight(3, 8),
             Four::Straight(4, 9),
-            Four::Straight(5, 10),
-            Four::Straight(6, 11),
-            // ,,,,,,xbbbb.x,,
-            // ,,,,,xbbbb.x,,,
-            // ,,,,xbbbb.x,,,,
-            // ,,,xbbbb.x,,,,,
+            // ,,,,xbbbb.x
+            // ,,,xbbbb.x,
+            // ,,xbbbb.x,,
+            // ,xbbbb.x,,,
+            Four::Normal(1),
+            Four::Normal(2),
             Four::Normal(3),
             Four::Normal(4),
-            Four::Normal(5),
-            Four::Normal(6),
-            // ,,,,,,xb.bbbx,,
-            // ,,,,xb.bbbx,,,,
-            // ,,,xb.bbbx,,,,,
-            // ,,xb.bbbx,,,,,,
-            Four::Normal(6),
-            Four::Normal(8),
-            Four::Normal(9),
-            Four::Normal(10),
-            // ,,,,,,xbb.bbx,,
-            // ,,,,,xbb.bbx,,,
-            // ,,,xbb.bbx,,,,,
-            // ,,xbb.bbx,,,,,,
-            Four::Normal(5),
-            Four::Normal(6),
-            Four::Normal(8),
-            Four::Normal(9),
-            // ,,,,,,xbbb.bx,,
-            // ,,,,,xbbb.bx,,,
-            // ,,,,xbbb.bx,,,,
-            // ,,xbbb.bx,,,,,,
+            // ,,,,xb.bbbx
+            // ,,xb.bbbx,,
+            // ,xb.bbbx,,,
+            // xb.bbbx,,,,
             Four::Normal(4),
-            Four::Normal(5),
             Four::Normal(6),
+            Four::Normal(7),
             Four::Normal(8),
-            // ,,,,,x.bbbbx,,,
-            // ,,,,x.bbbbx,,,,
-            // ,,,x.bbbbx,,,,,
-            // ,,x.bbbbx,,,,,,
+            // ,,,,xbb.bbx
+            // ,,,xbb.bbx,
+            // ,xbb.bbx,,,
+            // xbb.bbx,,,,
+            Four::Normal(3),
+            Four::Normal(4),
+            Four::Normal(6),
+            Four::Normal(7),
+            // ,,,,xbbb.bx
+            // ,,,xbbb.bx,
+            // ,,xbbb.bx,,
+            // xbbb.bx,,,,
+            Four::Normal(2),
+            Four::Normal(3),
+            Four::Normal(4),
+            Four::Normal(6),
+            // ,,,x.bbbbx,
+            // ,,x.bbbbx,,
+            // ,x.bbbbx,,,
+            // x.bbbbx,,,,
+            Four::Normal(6),
+            Four::Normal(7),
             Four::Normal(8),
             Four::Normal(9),
-            Four::Normal(10),
-            Four::Normal(11),
         ];
 
         debug_assert_eq!(FOUR_PATTERNS.len(), EMPTY_PATTERNS.len());
@@ -2527,5 +2564,6 @@ mod tests {
         check_forbidden("i6g8h8i8h9i9", "h7f9");
         check_forbidden("h11j11f12h12e13k13f14k14c15k15", "i12");
         check_forbidden("g11h11j12j13k13l14m15", "");
+        check_forbidden("l2l3l6l8l9", "l5");
     }
 }
