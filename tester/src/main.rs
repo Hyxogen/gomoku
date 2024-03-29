@@ -191,8 +191,8 @@ where
             let mut stdout = StandardStream::stdout(ColorChoice::Always);
 
             writeln!(stdout, "KO").unwrap();
-            writeln!(stdout, "board: {}", board).unwrap();
-            writeln!(stdout, "reduced: {}", reduced).unwrap();
+            writeln!(stdout, "board   {}", board).unwrap();
+            writeln!(stdout, "reduced {}", reduced).unwrap();
             for row in 0..RENJU_BOARD_SIZEU8 {
                 for col in 0..RENJU_BOARD_SIZEU8 {
                     let pos = (row, col).into();
