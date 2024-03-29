@@ -21,6 +21,7 @@ async fn main() {
     let mut win = board.win();
     let mut overline = board.overline();
     let mut double_fours = board.double_fours();
+    let mut threes = board.threes();
 
     let dots: &[Pos] = &[
         "h8".parse().unwrap(),
@@ -92,6 +93,10 @@ async fn main() {
                 let pos = (row, col).into();
                 let (x, y) = to_screen_coords(pos);
 
+                if threes.at(pos) {
+                    //draw_circle(x, y, 5., WHITE);
+                }
+
                 if win.at(pos) {
                     draw_circle(x, y, 5., GOLD);
                 } else {
@@ -106,6 +111,7 @@ async fn main() {
                     if double_fours.at(pos) {
                         draw_circle(x, y, 5., BLUE);
                     }
+
                 }
             }
         }
@@ -132,6 +138,7 @@ async fn main() {
             win = board.win();
             overline = board.overline();
             double_fours = board.double_fours();
+            threes = board.threes();
         }
         if is_mouse_button_down(MouseButton::Middle) {
             board = board.set(square, None);
@@ -139,6 +146,7 @@ async fn main() {
             win = board.win();
             overline = board.overline();
             double_fours = board.double_fours();
+            threes = board.threes();
         }
 
         if is_key_down(KeyCode::C) {

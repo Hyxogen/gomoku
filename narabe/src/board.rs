@@ -1212,13 +1212,15 @@ impl Board {
                                 blocked += 1;
                             }
                         }
+
+                        self = self.set(pos, None);
                     }
 
                     if blocked < count {
                         actual += 1;
                     }
                 }
-                res = actual > 1;
+                res = actual >= 2;
             }
         }
 
@@ -1255,6 +1257,12 @@ impl Board {
 
     pub fn double_fours(self) -> BitBoard<RENJU_BOARD_SIZE> {
         self.construct_bitboard(Self::is_double_four)
+    }
+
+    pub fn threes(self) -> BitBoard<RENJU_BOARD_SIZE> {
+        self.construct_bitboard(|board, pos, side| {
+            board.get_threes(pos, side).into_iter().any(|three| three.is_some())
+        })
     }
 
     pub fn renju_forbidden(self) -> BitBoard<RENJU_BOARD_SIZE> {
@@ -2007,6 +2015,12 @@ mod tests {
     }
 
     #[test]
+    fn test_double_threes() {
+        test_three("h11f12h12k13k14k15i12", "i12", &["j13", "g12"]);
+        test_three("h11j11f12h12e13k13f14k14c15k15i12", "i12", &["j13", "g12"]);
+    }
+
+    #[test]
     fn test_transforms() {
         for row in 0..RENJU_BOARD_SIZEU8 {
             for col in 0..RENJU_BOARD_SIZEU8 {
@@ -2506,7 +2520,8 @@ mod tests {
     }
 
     #[test]
-    fn double_three1() {
-        check_forbidden("i6g8h8i8h9i9", "h7f9");
+    fn renju_forbidden() {
+        //check_forbidden("i6g8h8i8h9i9", "h7f9");
+        check_forbidden("h11j11f12h12e13k13f14k14c15k15", "i12");
     }
 }
